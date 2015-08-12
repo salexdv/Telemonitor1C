@@ -75,9 +75,10 @@ namespace Telemonitor
 		/// <summary>
         /// Выполняет команду через COMConnector		       
         /// </summary>		
-		public string Execute(Mutex mutLogger)
+		public V8Answer Execute(Mutex mutLogger)
 		{
 			string result = "";
+			string fName = "";
 			string v8version = this.excCommand.Version.ToString();
 			
 			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);
@@ -94,7 +95,8 @@ namespace Telemonitor
                 object executer = Method(externalData, "Create", new object[1] { runPath + "executer" + v8version + ".tep" });                
                 SetProperty(executer, "Код", this.excCommand.Code);                
                 Method(executer, "ExecuteCode", new object[0]);                
-                result = (string)GetProperty(executer, "Результат");                
+                result = (string)GetProperty(executer, "Результат");
+				fName = (string)GetProperty(executer, "Результат_Файл");                
                 Marshal.Release(Marshal.GetIDispatchForObject(executer));
                 Marshal.Release(Marshal.GetIDispatchForObject(externalData));
                 Marshal.ReleaseComObject(executer);
@@ -112,8 +114,9 @@ namespace Telemonitor
                 
             	Logger.Write(String.Format("Не удалось выполнить команду \"{0}\": {1}", this.excCommand.ID, errorDescr), true, mutLogger);            	
 				this.success = false;
-            }    
-			return result;            
+            }  
+          
+            return new V8Answer(result, fName);
 		}
 		
 		/// <summary>

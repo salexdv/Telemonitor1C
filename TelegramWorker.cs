@@ -167,6 +167,34 @@ namespace Telemonitor
 		}
 		
 		/// <summary>
+        /// Отправляет документ (файл) в заданный чат       
+        /// <PARAM name="chat_id">Идентификатор чата</PARAM>
+		/// <PARAM name="fName">Имя файла</PARAM>        
+        /// </summary>
+		private void SendDocument(int chat_id, string fileName)
+		{						
+			if (File.Exists(fileName)) {
+			
+				string url = "https://api.telegram.org/bot{0}/sendDocument";
+			
+				Logger.Debug(tmSettings, "url: " + url, false, mutLogger);				
+				Logger.Debug(tmSettings, "response file: " + fileName, false, mutLogger);
+				            										
+				PostData pData = new PostData();
+				pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));
+				pData.Params.Add(new PostDataParam("document", fileName, ""));
+				
+				SendMultipartFormdata(url, pData);
+				
+				pData.Dispose();
+				
+			}
+			else
+				Logger.Write("Файл для отправки " + fileName + " не обнаружен", true, mutLogger);
+			
+		}
+		
+		/// <summary>
         /// Создает HttpWebRequest с заданным Url       
         /// <PARAM name="url">Адрес url</PARAM>				       
         /// </summary>
@@ -218,11 +246,19 @@ namespace Telemonitor
 						
 			Logger.Debug(tmSettings, "Запуск команды " + tCommand.command.ID + " на выполнение", false, mutLogger);			
 			// Создание ComConnector и выполнение кода команды
-			string result = connector.Execute(mutLogger);
+			V8Answer result = connector.Execute(mutLogger);
 			Logger.Debug(tmSettings, "Команда " + tCommand.command.ID + " выполнена", false, mutLogger);
 			
-			if (connector.Success)
-				SendMessage(tCommand.message.chat.id, result);
+			if (connector.Success) {
+				if (!String.IsNullOrEmpty(result.Text))
+					SendMessage(tCommand.message.chat.id, result.Text);
+				
+				if (!String.IsNullOrEmpty(result.FileName))
+					SendDocument(tCommand.message.chat.id, result.FileName);
+				
+				if (String.IsNullOrEmpty(result.Text) && String.IsNullOrEmpty(result.FileName)) 
+					SendMessage(tCommand.message.chat.id, "Команда выполнена");
+			}
 			else
 				SendMessage(tCommand.message.chat.id, "Ошибка при выполнении команды");
 			

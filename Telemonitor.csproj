@@ -63,6 +63,7 @@
     <Compile Include="TelegramUpdate.cs" />
     <Compile Include="TelegramUser.cs" />
     <Compile Include="TelegramWorker.cs" />
+    <Compile Include="V8Answer.cs" />
     <Compile Include="V8Connector.cs" />
   </ItemGroup>
   <ItemGroup>
