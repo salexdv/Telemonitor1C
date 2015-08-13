@@ -242,31 +242,56 @@ namespace Telemonitor
 		private void ExecuteCommand(object sender, DoWorkEventArgs e)
 		{
 			TelegramCommand tCommand = (TelegramCommand)e.Argument;
-			V8Connector connector = new V8Connector(tCommand.command);
+			V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters);
 						
-			Logger.Debug(tmSettings, "Запуск команды " + tCommand.command.ID + " на выполнение", false, mutLogger);			
+			Logger.Debug(tmSettings, "Запуск команды " + tCommand.Command.ID + " на выполнение", false, mutLogger);			
 			// Создание ComConnector и выполнение кода команды
 			V8Answer result = connector.Execute(mutLogger);
-			Logger.Debug(tmSettings, "Команда " + tCommand.command.ID + " выполнена", false, mutLogger);
+			Logger.Debug(tmSettings, "Команда " + tCommand.Command.ID + " выполнена", false, mutLogger);
 			
 			if (connector.Success) {
 				if (!String.IsNullOrEmpty(result.Text))
-					SendMessage(tCommand.message.chat.id, result.Text);
+					SendMessage(tCommand.Message.chat.id, result.Text);
 				
 				if (!String.IsNullOrEmpty(result.FileName))
-					SendDocument(tCommand.message.chat.id, result.FileName);
+					SendDocument(tCommand.Message.chat.id, result.FileName);
 				
 				if (String.IsNullOrEmpty(result.Text) && String.IsNullOrEmpty(result.FileName)) 
-					SendMessage(tCommand.message.chat.id, "Команда выполнена");
+					SendMessage(tCommand.Message.chat.id, "Команда выполнена");
 			}
 			else
-				SendMessage(tCommand.message.chat.id, "Ошибка при выполнении команды");
+				SendMessage(tCommand.Message.chat.id, "Ошибка при выполнении команды");
 			
 			connector.Dispose();
 			
-			messageOrder.Remove(tCommand.message.message_id);
+			messageOrder.Remove(tCommand.Message.message_id);
 			
 			((BackgroundWorker)sender).CancelAsync();			
+			
+		}
+		
+		/// <summary>
+		/// Возвращает параметры из команды (все что отделено пробелом).
+		/// Текст команды при этом приводится к чистому виду.
+		/// </summary>
+		/// <param name="cmd">Текст поступившей команды</param>
+		/// <returns>Параметры команды, разделенные запятыми</returns>
+		private string extractParamForCommand(string cmd, out string newCmd)
+		{
+			string param = "";
+					
+			string[] subStr = cmd.Split(' ');
+			newCmd = subStr[0];
+			
+			for (int i = 1; i < subStr.Length; i++) {
+				param += subStr[i];
+				param += ',';
+			}
+			
+			if (!String.IsNullOrEmpty(param))
+				param = param.Remove(param.Length - 1);
+			
+			return param;
 			
 		}
 		
@@ -277,6 +302,8 @@ namespace Telemonitor
 		private void listener_CheckMessage(TelegramMessage message)			
 		{
 			string text = message.ToString();
+			string param = extractParamForCommand(text, out text);
+			text = text.ToLower();
 			
 			if (text == "/start") {
 				// Запрошен список команд
@@ -294,8 +321,9 @@ namespace Telemonitor
 					// Запрошена команда из списка
 					if (!messageOrder.ContainsKey(message.message_id)) {
 						TelegramCommand tCommand = new TelegramCommand();
-						tCommand.message = message;
-						tCommand.command = (Command)cmd;
+						tCommand.Message = message;
+						tCommand.Command = (Command)cmd;
+						tCommand.Parameters = param;
 						messageOrder.Add(message.message_id, tCommand);
 						BackgroundWorker executer = new BackgroundWorker();
 						executer.WorkerSupportsCancellation = true;

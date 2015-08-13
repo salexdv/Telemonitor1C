@@ -52,7 +52,7 @@ namespace Telemonitor
 	    
 	    public override string ToString()
         {
-	    	return text.Trim().ToLower();
+	    	return text.Trim();
 	    }
 	}
 }

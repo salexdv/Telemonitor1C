@@ -24,6 +24,11 @@ namespace Telemonitor
 		private Command excCommand;
 		
 		/// <summary>
+		/// Параметры выполняемой команды
+		/// </summary>
+		private string excParams;
+		
+		/// <summary>
 		/// Тип для создания ComConnector
 		/// </summary>
 		private Type v80Type;
@@ -63,13 +68,14 @@ namespace Telemonitor
 		}
 			
 		/// <summary>
-        /// Конструктор класса
-		/// <PARAM name="cmdName">Имя команды</PARAM>
+        /// Конструктор класса		
 		/// <PARAM name="cmdObj">Команда</PARAM>		
+		/// <PARAM name="parameters">Параметры команды</PARAM>
         /// </summary>		        
-		public V8Connector(Command cmdObj)
+		public V8Connector(Command cmdObj, string parameters)
 		{			
 			this.excCommand = cmdObj;			
+			this.excParams = parameters; 
 		}
 		
 		/// <summary>
@@ -93,7 +99,8 @@ namespace Telemonitor
             	Connection = v80Type.InvokeMember("Connect", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.InvokeMethod, null, v8Connector, new object[1] { this.excCommand.ConnectionString });            	
                 object externalData = GetProperty(null, "ExternalDataProcessors");                
                 object executer = Method(externalData, "Create", new object[1] { runPath + "executer" + v8version + ".tep" });                
-                SetProperty(executer, "Код", this.excCommand.Code);                
+                SetProperty(executer, "Код", this.excCommand.Code);
+				SetProperty(executer, "ПараметрыКоманды", this.excParams);                
                 Method(executer, "ExecuteCode", new object[0]);                
                 result = (string)GetProperty(executer, "Результат");
 				fName = (string)GetProperty(executer, "Результат_Файл");                

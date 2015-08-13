@@ -25,11 +25,13 @@ namespace Telemonitor
 		/// <summary>
 	    /// Сообщение с командой
 	    /// </summary>	    
-	    public TelegramMessage message { get; set; }
+	    public TelegramMessage Message { get; set; }
 	    
 	    /// <summary>
 	    /// Команда для выполнения
 	    /// </summary>	    
-	    public Command command { get; set; }
+	    public Command Command { get; set; }
+	    
+	    public string Parameters { get; set; }
 	}
 }
