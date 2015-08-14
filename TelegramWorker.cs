@@ -305,7 +305,7 @@ namespace Telemonitor
 			string param = extractParamForCommand(text, out text);
 			text = text.ToLower();
 			
-			if (text == "/start") {
+			if (text == "/start" || text == "/help" || text == "/settings") {
 				// Запрошен список команд
 				SendMessage(message.chat.id, tmSettings.GetCommands());
 			}
