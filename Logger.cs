@@ -34,13 +34,13 @@ namespace Telemonitor
         /// <PARAM name="isError">Признак того, что событие является ошибкой</PARAM>
         /// </summary>
 		public static void Write(string description, bool isError = false, Mutex mutLogger = null)
-		{						
-			string fileName = GetLogFileName();
-					
+		{										
 			bool useMutex =  (mutLogger != null);
 			
 			if (useMutex)
 				mutLogger.WaitOne();
+			
+			string fileName = GetLogFileName();
 			
 			StreamWriter LogFile = new StreamWriter(fileName, true, Encoding.Unicode);
             LogFile.AutoFlush = true;			

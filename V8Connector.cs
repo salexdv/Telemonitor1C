@@ -42,6 +42,11 @@ namespace Telemonitor
         /// Признак успешного выполнения команды
         /// </summary>
         private bool success;
+        
+        /// <summary>
+        /// Признак запуска кода в безопасном режиме 1С
+        /// </summary>
+        private bool safeMode1C;
 
         private static BindingFlags FlagsSetProrerty = BindingFlags.Public | BindingFlags.Static | BindingFlags.SetProperty;
         private static BindingFlags FlagsGetProperty = BindingFlags.Public | BindingFlags.Static | BindingFlags.GetProperty;
@@ -72,10 +77,11 @@ namespace Telemonitor
 		/// <PARAM name="cmdObj">Команда</PARAM>		
 		/// <PARAM name="parameters">Параметры команды</PARAM>
         /// </summary>		        
-		public V8Connector(Command cmdObj, string parameters)
+		public V8Connector(Command cmdObj, string parameters, bool safeMode1C)
 		{			
 			this.excCommand = cmdObj;			
-			this.excParams = parameters; 
+			this.excParams = parameters;
+			this.safeMode1C = safeMode1C;
 		}
 		
 		/// <summary>
@@ -98,7 +104,7 @@ namespace Telemonitor
             {            	
             	Connection = v80Type.InvokeMember("Connect", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.InvokeMethod, null, v8Connector, new object[1] { this.excCommand.ConnectionString });            	
                 object externalData = GetProperty(null, "ExternalDataProcessors");                
-                object executer = Method(externalData, "Create", new object[1] { runPath + "executer" + v8version + ".tep" });                
+                object executer = Method(externalData, "Create", new object[2] { runPath + "executer" + v8version + ".tep", this.safeMode1C });               
                 SetProperty(executer, "Код", this.excCommand.Code);
 				SetProperty(executer, "ПараметрыКоманды", this.excParams);                
                 Method(executer, "ExecuteCode", new object[0]);                
@@ -119,7 +125,7 @@ namespace Telemonitor
                     errorDescr = errorDescr + "\r\n" + e.InnerException.Message;
                 }
                 
-            	Logger.Write(String.Format("Не удалось выполнить команду \"{0}\": {1}", this.excCommand.ID, errorDescr), true, mutLogger);            	
+            	Logger.Write(String.Format("Не удалось выполнить команду \"{0}\": {1}", this.excCommand.ID, errorDescr), true, mutLogger);
 				this.success = false;
             }  
           

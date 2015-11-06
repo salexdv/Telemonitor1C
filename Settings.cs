@@ -9,9 +9,11 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace Telemonitor
 {
+		
 	/// <summary>
 	/// Класс для хранения всех настроек
 	/// </summary>
@@ -26,20 +28,30 @@ namespace Telemonitor
 		private string proxyUser;
 		private string proxyPass;
 		private List<DBStruct> bases;
-		private Dictionary<string, Command> commands;
+		private Dictionary<string, Command> commands;		
 		private bool debug;
-		
+		private bool safeMode1C;
+		private bool buttonsShowStart;
+		private bool buttonsHideKeyboard;
+		private bool buttonsUsePic;
+		private int buttonsNumRows;
+				
 		/// <summary>
         /// Получает настройку из ini файла, преобразуя значение к заданному типу        
         /// <PARAM name="iniSettings">Файл ini</PARAM>
         /// <PARAM name="section">Секция</PARAM>
         /// <PARAM name="key">Ключ</PARAM>
         /// <PARAM name="typeOfValue">Тип значения</PARAM>
+        /// <PARAM name="exceptIfEmpty">Вызывать исключение, если получено пустое значение параметра</PARAM>
         /// </summary>
-        private object IniReadValue(iniFile iniSettings, string section, string key, Type typeOfValue)
+        private object IniReadValue(iniFile iniSettings, string section, string key, Type typeOfValue, bool exceptIfEmpty = false)
         {
         	string iniValue = iniSettings.IniReadValue(section, key);
 			
+        	if (exceptIfEmpty && String.IsNullOrEmpty(iniValue)) {
+        		throw new Exception("Не удалось прочитать значения параметра \"" + section + ":" + key + "\"");
+        	}
+        	        	        	
         	if (typeOfValue == typeof(int)) {
         		if (String.IsNullOrEmpty(iniValue)) {
         			iniValue = "0";
@@ -52,7 +64,7 @@ namespace Telemonitor
         		else if (iniValue == "1") {
         			iniValue = "true";
         		}
-        	}
+        	}        	
         	
         	try
 			{
@@ -63,6 +75,23 @@ namespace Telemonitor
 				throw new Exception("Не удалось прочитать значения параметра \"" + section + ":" + key + "\"");				
 			}
     			
+        }
+        
+        /// <summary>
+        /// Получает значение параметра из ini-файла.
+        /// Если такого параметра нет, то он создается с переданным
+        /// значением по умолчанию
+        /// </summary>
+        private object GetAdditionalParamFromINI(iniFile iniSettings, string section, string key, Type typeOfValue, string defVal)
+        {
+        	try
+			{
+        		return IniReadValue(iniSettings, section, key, typeOfValue, true);
+        	}
+        	catch {
+        		iniSettings.IniWriteValue(section, key, defVal);
+        		return IniReadValue(iniSettings, section, key, typeOfValue);
+        	}
         }
 		
 		/// <summary>
@@ -90,6 +119,12 @@ namespace Telemonitor
 					this.proxyPass = (string)IniReadValue(iniSettings, "Proxy", "Password", typeof(string));
 					this.debug = (bool)IniReadValue(iniSettings, "Debug", "Enabled", typeof(bool));
 					
+					this.safeMode1C = (bool)GetAdditionalParamFromINI(iniSettings, "SafeMode1C", "Enabled", typeof(bool), "1");					
+					this.buttonsShowStart = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "ShowStartButton", typeof(bool), "0");
+					this.buttonsHideKeyboard = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "HideButtonsAfterMessage", typeof(bool), "1");					
+					this.buttonsNumRows = (int)GetAdditionalParamFromINI(iniSettings, "Buttons", "NumRowsOfButtons", typeof(int), "2");
+					this.buttonsUsePic = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "UsePictures", typeof(bool), "1");
+					
 					if (!String.IsNullOrEmpty(botToken)) {
 						if (this.interval == 0)
 							this.interval = 1;
@@ -116,6 +151,10 @@ namespace Telemonitor
 					iniSettings.IniWriteValue("Proxy", "Username", "");
 					iniSettings.IniWriteValue("Proxy", "Password", "");
 					iniSettings.IniWriteValue("Debug", "Enabled", "0");
+					iniSettings.IniWriteValue("SafeMode1C", "Enabled", "1");
+					iniSettings.IniWriteValue("Buttons", "ShowStartButton", "0");
+					iniSettings.IniWriteValue("Buttons", "HideButtonsAfterMessage", "1");
+					iniSettings.IniWriteValue("Buttons", "NumRowsOfButtons", "2");
 					
 					Logger.Write("Создан файл настроек \"settings.ini\"");
 				}
@@ -139,7 +178,8 @@ namespace Telemonitor
 		{
         	List<DBCommand> commands = new List<DBCommand>();
         	
-        	string[] cmdFiles = Directory.GetFiles(commandDir, "*.tcm");
+        	string fileExtention = "";
+        	string[] cmdFiles = Directory.GetFiles(commandDir, "*.tcm*");
         	
         	foreach (string cmdFile in cmdFiles) {
         		
@@ -162,6 +202,11 @@ namespace Telemonitor
         					newCommand.Name = commandName;
         					newCommand.Description = commandDescr;
         					newCommand.Code = commandCode;
+        					fileExtention = Path.GetExtension(cmdFile); 
+        					if ( fileExtention.ToLower() == ".tcm_b" )
+        						newCommand.KeyboardCommand = true;
+        					else
+        						newCommand.KeyboardCommand = false;
         					commands.Add(newCommand);
         				}
         				else {
@@ -251,7 +296,7 @@ namespace Telemonitor
 								newBase.Commands = commands;
 								this.bases.Add(newBase);
 								
-								foreach (DBCommand cmd in commands) {
+								foreach (DBCommand cmd in commands) {									
 									string commandID = "/" + dbName + "_" + cmd.Name;									
 									Command baseCmd = new Command();
 									baseCmd.ID = commandID; 
@@ -259,6 +304,9 @@ namespace Telemonitor
 									baseCmd.Code = cmd.Code;
 									baseCmd.Version = newBase.Version;
 									baseCmd.ConnectionString = newBase.ConnectionString;
+									baseCmd.KeyboardCommand = cmd.KeyboardCommand;
+									if (cmd.KeyboardCommand)
+										commandID += "_keyb";
 									this.commands.Add(commandID.ToLower(), baseCmd);
 								}
 							}
@@ -431,6 +479,61 @@ namespace Telemonitor
 		}
 		
 		/// <summary>
+        /// Признак запуска кода в безопасном режиме 1С
+        /// </summary>
+		public bool SafeMode1C
+		{
+			get 
+			{
+				return this.safeMode1C;
+			}
+		}
+		
+		/// <summary>
+        /// Признак показа кнопки доп.клавиатуры для запроса списка команд
+        /// </summary>
+		public bool ShowStartButton
+		{
+			get 
+			{
+				return this.buttonsShowStart;
+			}
+		}
+		
+		/// <summary>
+        /// Скрывать или нет доп.клавиатуру после получения сообщения
+        /// </summary>
+		public bool HideButtonsAfterMessage
+		{
+			get 
+			{
+				return this.buttonsHideKeyboard;
+			}
+		}
+		
+		/// <summary>
+        /// Скрывать или нет доп.клавиатуру после получения сообщения
+        /// </summary>
+		public int NumRowsOfButtons
+		{
+			get 
+			{
+				return this.buttonsNumRows;
+			}
+		}
+		
+		/// <summary>
+        /// Скрывать или нет доп.клавиатуру после получения сообщения
+        /// </summary>
+		public bool UsePicturesAtButtons
+		{
+			get 
+			{
+				return this.buttonsUsePic;
+			}
+		}
+		
+		/// <summary>
         /// Возвращает команду по имени. Если такой команды нет, возвращается null
         /// <PARAM name="commandName">Имя команды</PARAM>
         /// </summary>
@@ -452,15 +555,79 @@ namespace Telemonitor
 			string strCommands = "/screen - сделать скриншот";
         	
 			foreach (KeyValuePair<string, Command> element in this.commands) {
-
-				if (!String.IsNullOrEmpty(strCommands))
-					strCommands += "\r\n";
+			
+				if (!element.Value.KeyboardCommand) {
 				
-				strCommands += element.Value.ID + " - " + element.Value.Description;
+					if (!String.IsNullOrEmpty(strCommands))
+						strCommands += "\r\n";
+					
+					strCommands += element.Value.ID + " - " + element.Value.Description;
+				}
 				
 			}
 			
 			return strCommands;			
+		}
+        
+        /// <summary>
+        /// Возвращает список команд (кнопок) с описаниями
+        /// кнопки располагаются максимум по 2 в ряд
+        /// </summary>
+        public string GetKeyboardCommands()
+		{
+			string strCommand = "";
+			List<List<string>>  buttons = new List<List<string>>();
+        	
+			if (ShowStartButton) {
+				List<string> array_of_but = new List<string>();
+				if (UsePicturesAtButtons)
+					array_of_but.Add(Const.PIC_BUTTON_START + "/start");
+				else
+					array_of_but.Add("/start");
+				buttons.Add(array_of_but);
+			}
+						
+			foreach (KeyValuePair<string, Command> element in this.commands) {
+
+				if (element.Value.KeyboardCommand) {
+				
+					strCommand = element.Value.ID;					
+					if (UsePicturesAtButtons)
+						strCommand = Const.PIC_BUTTON_OTHER + strCommand;
+					
+					if (buttons.Count == 0) {
+						List<string> array_of_but = new List<string>();
+						array_of_but.Add(strCommand);
+						buttons.Add(array_of_but);
+					}
+					else
+					{
+						if (buttons[buttons.Count - 1].Count == NumRowsOfButtons) {
+							List<string> array_of_but = new List<string>();
+							array_of_but.Add(strCommand);
+							buttons.Add(array_of_but);
+						}
+						else {
+							buttons[buttons.Count - 1].Add(strCommand);
+						}
+							
+					}
+				}
+				
+			}
+			
+			TelegramReplyKeyboardMarkup reply = new TelegramReplyKeyboardMarkup();
+			reply.keyboard = buttons;
+			reply.resize_keyboard = (NumRowsOfButtons == 0);
+				
+			string result = "";
+			
+			if (buttons.Count > 0)
+			{
+				result = JsonConvert.SerializeObject(reply);
+			}
+			
+			return result;
 		}
 		
 	}

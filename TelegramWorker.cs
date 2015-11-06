@@ -19,6 +19,7 @@ using System.Text;
 using System.Windows.Forms;
 using System.Web;
 using Newtonsoft.Json;
+using System.Timers;
 
 namespace Telemonitor
 {	
@@ -40,7 +41,7 @@ namespace Telemonitor
 		/// <summary>
         /// Смещение для опроса getUpdates                       
         /// </summary>
-		private int tmOffset;	
+		private int tmOffset;
 		
 		/// <summary>
         /// Mutex для записи лога из разных потоков                       
@@ -48,9 +49,15 @@ namespace Telemonitor
 		private Mutex mutLogger;
 		
 		/// <summary>
-        /// Основной BackgroundWorker для работы с api.telegram.org                       
+        /// Mutex для запросов к API                       
         /// </summary>
-		private BackgroundWorker listener;		
+		private Mutex mutAPI;
+				
+		/// <summary>
+		/// Основной таймер для работы опроса бота через
+		/// заданные промежутки времени
+		/// </summary>
+		private System.Timers.Timer listenerTimer;
 		
 		/// <summary>
         /// Очередь необработанных сообщений                       
@@ -62,10 +69,12 @@ namespace Telemonitor
         /// <PARAM name="settings">Настройки</PARAM>        
         /// </summary>
 		public TelegramWorker(Settings settings)
-		{
-			this.tmSettings = settings;
+		{			
+			this.tmOffset = 0;
+			this.tmSettings = settings;			
 			this.botToken = settings.BotToken;			
 			this.mutLogger = new Mutex();
+			this.mutAPI = new Mutex();
 			this.messageOrder = new Dictionary<int, TelegramCommand>();						
 		}
 		
@@ -74,10 +83,58 @@ namespace Telemonitor
         /// </summary>
 		public void StartWork()
 		{
-			listener = new BackgroundWorker();
-			listener.WorkerSupportsCancellation = true;
-			listener.DoWork += new DoWorkEventHandler(listener_DoWork);
-			listener.RunWorkerAsync();									
+			listenerTimer = new System.Timers.Timer(this.tmSettings.Interval * 1000);
+			listenerTimer.Elapsed += new ElapsedEventHandler(listenerTimer_Elapsed);			
+			listenerTimer.Start();
+						
+			//listener = new BackgroundWorker();
+			//listener.WorkerSupportsCancellation = true;
+			//listener.DoWork += new DoWorkEventHandler(listener_DoWork);
+			//listener.RunWorkerAsync();									
+		}
+
+		void listenerTimer_Elapsed(object sender, ElapsedEventArgs e)
+		{
+							
+			// Получение updates с заданной периодичностью
+			HttpWebRequest request = null;
+										
+			string url = "https://api.telegram.org/bot{0}/getUpdates?offset=" + this.tmOffset.ToString();
+			Logger.Debug(tmSettings, "url: " + url, false, mutLogger);
+
+			//Logger.Debug(tmSettings, "mt wait", false, mutLogger);
+			mutAPI.WaitOne();
+			
+			request = CreateRequest(String.Format(url, botToken));
+			//Logger.Debug(tmSettings, "request created", false, mutLogger);
+			
+			TelegramAnswer answer = null;
+			
+			using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
+				
+				//Logger.Debug(tmSettings, "response ok", false, mutLogger);
+												
+				using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
+		            string jsonText = reader.ReadToEnd();
+					// Убираем пикрограммы
+					jsonText = jsonText.Replace(Const.PIC_BUTTON_START_REP, "");
+					jsonText = jsonText.Replace(Const.PIC_BUTTON_OTHER_REP, "");					
+		            Logger.Debug(tmSettings, "request:" + jsonText, false, mutLogger);
+		            // Получение updates из JSON
+					answer = JsonConvert.DeserializeObject<TelegramAnswer>(jsonText);
+		            Logger.Debug(tmSettings, answer.ok.ToString(), false, mutLogger);			            
+		        }
+				
+			}
+			
+			request = null;
+			
+			// Обработка, полученных updates
+			if (answer != null)
+				tmOffset = Math.Max(tmOffset, listener_CheckTelegramAnswer(answer));						
+			
+			mutAPI.ReleaseMutex();
+				
 		}
 				
 		/// <summary>
@@ -87,6 +144,10 @@ namespace Telemonitor
         /// </summary>
 		private void SendMultipartFormdata(string url, PostData pData)
 		{
+			//Logger.Debug(tmSettings, "mt wait", false, mutLogger);
+			mutAPI.WaitOne();
+			//Logger.Debug(tmSettings, "mt success", false, mutLogger);
+			
 			HttpWebRequest request = CreateRequest(String.Format(url, botToken));
 			request.Method = WebRequestMethods.Http.Post;			
 			request.KeepAlive = true;
@@ -96,14 +157,22 @@ namespace Telemonitor
 			MemoryStream postDataStream = pData.GetPostData();
 			
 			request.ContentLength = postDataStream.Length;
+			
+			//Logger.Debug(tmSettings, "request created", false, mutLogger);
 									  		
 			using (Stream s = request.GetRequestStream())
 			{
-			    postDataStream.WriteTo(s);			    
+			    //Logger.Debug(tmSettings, "write to stream", false, mutLogger);
+				postDataStream.WriteTo(s);
+				//Logger.Debug(tmSettings, "flush", false, mutLogger);
 			    postDataStream.Flush();						    			    
 			}
 			
+			//Logger.Debug(tmSettings, "get response", false, mutLogger);
+			
 			using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
+				
+				//Logger.Debug(tmSettings, "response ok", false, mutLogger);
 				
 				using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
 		            string jsonText = reader.ReadToEnd();
@@ -118,7 +187,10 @@ namespace Telemonitor
         				
 			request = null;				
 			postDataStream.Close();			
-			postDataStream.Dispose();						
+			postDataStream.Dispose();
+
+			mutAPI.ReleaseMutex();
+			//Logger.Debug(tmSettings, "mt release", false, mutLogger);
 		}
 		
 		/// <summary>
@@ -137,7 +209,7 @@ namespace Telemonitor
 			pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));						
 			pData.Params.Add(new PostDataParam("caption", "Скриншот " + DateTime.Now.ToString(), PostDataParamType.Field));
 			pData.Params.Add(new PostDataParam("photo", fileName, "image/png"));
-			
+						
 			SendMultipartFormdata(url, pData);
 			
 			pData.Dispose();
@@ -149,7 +221,7 @@ namespace Telemonitor
         /// <PARAM name="chat_id">Идентификатор чата</PARAM>
 		/// <PARAM name="message">Текст сообщения</PARAM>        
         /// </summary>
-		private void SendMessage(int chat_id, string message)
+		private void SendMessage(int chat_id, string message, string keyboard = "")
 		{			
 			string url = "https://api.telegram.org/bot{0}/sendMessage";			
 			
@@ -159,6 +231,13 @@ namespace Telemonitor
 			PostData pData = new PostData();
 			pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));						
 			pData.Params.Add(new PostDataParam("text", message, PostDataParamType.Field));
+			if (!String.IsNullOrEmpty(keyboard))
+				pData.Params.Add(new PostDataParam("reply_markup", keyboard, PostDataParamType.Field));
+			else
+			{
+				if (tmSettings.HideButtonsAfterMessage)
+					pData.Params.Add(new PostDataParam("reply_markup", JsonConvert.SerializeObject(new TelegramReplyKeyboardHide()), PostDataParamType.Field));
+			}
 			
 			SendMultipartFormdata(url, pData);
 			
@@ -203,11 +282,10 @@ namespace Telemonitor
 		{
 			HttpWebRequest request = HttpWebRequest.Create(url) as HttpWebRequest;
 			request.Method = WebRequestMethods.Http.Post;
-			request.Timeout	= 10000;
+			request.Timeout = 5000;
 			if (tmSettings.UseProxy) {
 				request.Proxy = new WebProxy(tmSettings.ProxyServer, tmSettings.ProxyPort);
-			}
-			
+			}			
 			return request;
 		}
 		
@@ -242,7 +320,7 @@ namespace Telemonitor
 		private void ExecuteCommand(object sender, DoWorkEventArgs e)
 		{
 			TelegramCommand tCommand = (TelegramCommand)e.Argument;
-			V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters);
+			V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters, tmSettings.SafeMode1C);
 						
 			Logger.Debug(tmSettings, "Запуск команды " + tCommand.Command.ID + " на выполнение", false, mutLogger);			
 			// Создание ComConnector и выполнение кода команды
@@ -307,7 +385,7 @@ namespace Telemonitor
 			
 			if (text == "/start" || text == "/help" || text == "/settings") {
 				// Запрошен список команд
-				SendMessage(message.chat.id, tmSettings.GetCommands());
+				SendMessage(message.chat.id, tmSettings.GetCommands(), tmSettings.GetKeyboardCommands());
 			}
 			else if (text == "/screen") {
 				// Запрошен скриншот всей области экрана
@@ -315,7 +393,7 @@ namespace Telemonitor
 				SendPhoto(message.chat.id, fileName);
 				File.Delete(fileName);
 			}
-			else {
+			else {				
 				object cmd = tmSettings.GetCommandByName(text);
 				if (cmd != null) {
 					// Запрошена команда из списка
@@ -376,52 +454,14 @@ namespace Telemonitor
 			}
 			
 		}
-
-		/// <summary>
-        /// Обработчик для BackgroundWorker, который опрашивает api.telegram.org                    
-        /// </summary>
-		void listener_DoWork(object sender, DoWorkEventArgs e)
-		{
-			// Получение updates с заданной периодичностью
-			int interval = this.tmSettings.Interval;			
-			tmOffset = 0;			
-			                   		
-			HttpWebRequest request = null;			
-			
-			while (!listener.CancellationPending) {
-												
-				string url = "https://api.telegram.org/bot{0}/getUpdates?offset=" + this.tmOffset.ToString();
-				Logger.Debug(tmSettings, "url: " + url, false, mutLogger);				
-				             
-				request = CreateRequest(String.Format(url, botToken));
-				
-				using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
-					
-					using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
-			            string jsonText = reader.ReadToEnd();
-						Logger.Debug(tmSettings, "request:" + jsonText, false, mutLogger);
-			            // Получение updates из JSON
-						TelegramAnswer answer = JsonConvert.DeserializeObject<TelegramAnswer>(jsonText);
-			            Logger.Debug(tmSettings, answer.ok.ToString(), false, mutLogger);
-			            // Обработка, полученных updates
-			            tmOffset = listener_CheckTelegramAnswer(answer);
-			        }
-					
-				}
-				
-				request = null;
-								
-				System.Threading.Thread.Sleep(interval * 1000);				
-			}
-		}
 		
 		/// <summary>
         /// Останавливае работу с api.telegram.org                      
         /// </summary>
 		public void StopWork()
-		{
-			listener.CancelAsync();
-			listener.Dispose();			
+		{			
+			listenerTimer.Stop();
+			listenerTimer.Dispose();
 		}
 		
 		

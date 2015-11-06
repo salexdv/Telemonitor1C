@@ -61,6 +61,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Const.cs" />
     <Compile Include="iniFile.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="MainForm.cs" />
@@ -70,6 +71,7 @@
     <Compile Include="PostData.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="TelegramReplyKeyboardHide.cs" />
     <Compile Include="Service.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="Structures.cs" />
@@ -78,6 +80,7 @@
     <Compile Include="TelegramCommand.cs" />
     <Compile Include="TelegramGroupChat.cs" />
     <Compile Include="TelegramMessage.cs" />
+    <Compile Include="TelegramReplyKeyboardMarkup.cs" />
     <Compile Include="TelegramUpdate.cs" />
     <Compile Include="TelegramUser.cs" />
     <Compile Include="TelegramWorker.cs" />
@@ -91,6 +94,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="ProfilingSessions\Session20150907_104723.sdps" />
+    <Content Include="ProfilingSessions\Session20150907_104759.sdps" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

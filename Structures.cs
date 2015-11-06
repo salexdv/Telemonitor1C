@@ -22,6 +22,7 @@ namespace Telemonitor
 		string commandID;
 		string commandDescr;
 		string commandCode;
+		bool keyboardCommand;
 			
 		/// <summary>
         /// Версия 8.x
@@ -98,6 +99,22 @@ namespace Telemonitor
 			}
 		}
 		
+		/// <summary>
+        /// Признак того, что команда является клавиатурной
+		/// (показывается в виде кнопки доп.клавиатуры)
+        /// </summary>
+		public bool KeyboardCommand
+		{
+			get 
+			{
+				return keyboardCommand;
+			}
+			set
+			{
+				keyboardCommand = value;	
+			}
+		}
+		
 		#region Equals and GetHashCode implementation
 		// The code in this region is useful if you want to use this structure in collections.
 		// If you don't need it, you can just remove the region and the ": IEquatable<Structures>" declaration.
@@ -146,6 +163,7 @@ namespace Telemonitor
 		string commandName;
 		string commandDescr;
 		string commandCode;
+		bool keyboardCommand; 
 			
 		/// <summary>
         /// Имя команды
@@ -189,6 +207,22 @@ namespace Telemonitor
 			set
 			{
 				commandCode = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Признак того, что команда является клавиатурной
+		/// (показывается в виде кнопки доп.клавиатуры)
+        /// </summary>
+		public bool KeyboardCommand
+		{
+			get 
+			{
+				return keyboardCommand;
+			}
+			set
+			{
+				keyboardCommand = value;	
 			}
 		}
 		
