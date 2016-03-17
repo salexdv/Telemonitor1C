@@ -29,6 +29,8 @@ namespace Telemonitor
 		private string proxyPass;
 		private List<DBStruct> bases;
 		private Dictionary<string, Command> commands;		
+		private Dictionary<string, bool> allowUsers;
+		private Dictionary<string, bool> screenOwners;
 		private bool debug;
 		private bool safeMode1C;
 		private bool buttonsShowStart;
@@ -93,6 +95,27 @@ namespace Telemonitor
         		return IniReadValue(iniSettings, section, key, typeOfValue);
         	}
         }
+        		
+        /// <summary>
+        /// Возвращает из строки коллекцию пользователей, 
+		/// которым разрешен доступ      
+        /// </summary>
+        /// <param name="wl_users">Строка с именами пользователей через разделитель</param>
+        /// <returns></returns>
+        private Dictionary <string, bool> GetWhiteListOfUsers(string wl_users)
+        {        	
+        	
+        	Dictionary <string, bool> result = new Dictionary<string, bool>();
+        	
+        	string[] users = wl_users.Split(',');
+        	
+        	foreach (string user in users)
+        		if (!String.IsNullOrEmpty(user))
+        			result.Add(user, true);
+        	
+        	return result;
+        	
+        }
 		
 		/// <summary>
         /// Проверяет существование файла ini с настройками.
@@ -123,7 +146,9 @@ namespace Telemonitor
 					this.buttonsShowStart = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "ShowStartButton", typeof(bool), "0");
 					this.buttonsHideKeyboard = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "HideButtonsAfterMessage", typeof(bool), "1");					
 					this.buttonsNumRows = (int)GetAdditionalParamFromINI(iniSettings, "Buttons", "NumRowsOfButtons", typeof(int), "2");
-					this.buttonsUsePic = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "UsePictures", typeof(bool), "1");
+					this.buttonsUsePic = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "UsePictures", typeof(bool), "1");													
+					this.allowUsers = GetWhiteListOfUsers((string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "Users", typeof(string), ""));
+					this.screenOwners = GetWhiteListOfUsers((string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "ScreenOwners", typeof(string), ""));					
 					
 					if (!String.IsNullOrEmpty(botToken)) {
 						if (this.interval == 0)
@@ -155,6 +180,7 @@ namespace Telemonitor
 					iniSettings.IniWriteValue("Buttons", "ShowStartButton", "0");
 					iniSettings.IniWriteValue("Buttons", "HideButtonsAfterMessage", "1");
 					iniSettings.IniWriteValue("Buttons", "NumRowsOfButtons", "2");
+					iniSettings.IniWriteValue("WhiteList", "Users", "");
 					
 					Logger.Write("Создан файл настроек \"settings.ini\"");
 				}
@@ -255,12 +281,14 @@ namespace Telemonitor
 					
 					bool baseOK = true;					
 					string conString = "";
+					string wl_users = "";
 					int dbVersion = 0;
 					
 					try
 					{						
 						conString = (string)IniReadValue(iniSettings, "Base", "ConnectionString", typeof(string));
 						dbVersion = (int)IniReadValue(iniSettings, "Base", "Version", typeof(int));
+						wl_users = (string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "Users", typeof(string), "");						
 					}
 					catch (Exception e)
 					{
@@ -294,6 +322,7 @@ namespace Telemonitor
 								newBase.ConnectionString = conString;
 								newBase.Version = dbVersion;
 								newBase.Commands = commands;
+								newBase.AllowUsers = GetWhiteListOfUsers(wl_users);
 								this.bases.Add(newBase);
 								
 								foreach (DBCommand cmd in commands) {									
@@ -304,7 +333,8 @@ namespace Telemonitor
 									baseCmd.Code = cmd.Code;
 									baseCmd.Version = newBase.Version;
 									baseCmd.ConnectionString = newBase.ConnectionString;
-									baseCmd.KeyboardCommand = cmd.KeyboardCommand;
+									baseCmd.KeyboardCommand = cmd.KeyboardCommand;									
+									baseCmd.AllowUsers = newBase.AllowUsers;
 									if (cmd.KeyboardCommand)
 										commandID += "_keyb";
 									this.commands.Add(commandID.ToLower(), baseCmd);
@@ -549,31 +579,40 @@ namespace Telemonitor
 		
 		/// <summary>
         /// Возвращает список команд с описаниями
+        /// <PARAM name="username">Имя пользователя Telegram</PARAM>
         /// </summary>
-        public string GetCommands()
-		{
-			string strCommands = "/screen - сделать скриншот";
-        	
-			foreach (KeyValuePair<string, Command> element in this.commands) {
+        public string GetCommands(string username)
+		{			
+			string strCommands = "";
 			
-				if (!element.Value.KeyboardCommand) {
+			if (AllowToGetScreenshot(username))
+				strCommands = "/screen - сделать скриншот";			
+        	
+        	foreach (KeyValuePair<string, Command> element in this.commands) {
+			
+        		if (AllowableUserForCommand(username, element.Value)) {
 				
-					if (!String.IsNullOrEmpty(strCommands))
-						strCommands += "\r\n";
+	        		if (!element.Value.KeyboardCommand) {
 					
-					strCommands += element.Value.ID + " - " + element.Value.Description;
-				}
+						if (!String.IsNullOrEmpty(strCommands))
+							strCommands += "\r\n";
+						
+						strCommands += element.Value.ID + " - " + element.Value.Description;
+					}
+        			
+        		}
 				
 			}
-			
+								
 			return strCommands;			
 		}
         
         /// <summary>
         /// Возвращает список команд (кнопок) с описаниями
         /// кнопки располагаются максимум по 2 в ряд
+        /// <PARAM name="username">Имя пользователя Telegram</PARAM>
         /// </summary>
-        public string GetKeyboardCommands()
+        public string GetKeyboardCommands(string username)
 		{
 			string strCommand = "";
 			List<List<string>>  buttons = new List<List<string>>();
@@ -589,7 +628,7 @@ namespace Telemonitor
 						
 			foreach (KeyValuePair<string, Command> element in this.commands) {
 
-				if (element.Value.KeyboardCommand) {
+				if ( element.Value.KeyboardCommand && AllowableUserForCommand(username, element.Value) )  {
 				
 					strCommand = element.Value.ID;					
 					if (UsePicturesAtButtons)
@@ -630,5 +669,62 @@ namespace Telemonitor
 			return result;
 		}
 		
+        /// <summary>
+        /// Определяет, есть ли у пользователя доступ к команде /screen
+        /// </summary>
+        /// <param name="username">Имя пользователя (username)</param>
+        /// <returns></returns>
+        public bool AllowToGetScreenshot(string username)
+        {
+        	if (String.IsNullOrEmpty(username))
+        		username = "";
+        	
+        	if (screenOwners.Count == 0) {
+        		return true;
+        	}
+        	else {        		
+        		bool res = false;
+        		return screenOwners.TryGetValue(username, out res);
+        	}
+        }
+        
+        /// <summary>
+        /// Определяет, есть ли у пользователя доступ к команде
+        /// </summary>
+        /// <param name="username">Имя пользователя (username)</param>
+        /// <returns></returns>
+        public bool AllowableUserForCommand(string username, Command command)
+        {
+        	if (String.IsNullOrEmpty(username))
+        		username = "";
+        	
+        	if (command.AllowUsers.Count == 0) {
+        		return true;
+        	}
+        	else {        		
+        		bool res = false;
+        		return command.AllowUsers.TryGetValue(username, out res);
+        	}
+        }
+        
+        /// <summary>
+        /// Определяет, есть ли у пользователя доступ к боту
+        /// </summary>
+        /// <param name="username">Имя пользователя (username)</param>
+        /// <returns></returns>
+        public bool AllowableUser(string username)
+        {
+        	if (String.IsNullOrEmpty(username))
+        		username = "";
+        	
+        	if (allowUsers.Count == 0) {
+        		return true;
+        	}
+        	else {        		
+        		bool res = false;
+        		return allowUsers.TryGetValue(username, out res);
+        	}
+        }
+        
 	}
 }

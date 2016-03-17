@@ -23,6 +23,7 @@ namespace Telemonitor
 		string commandDescr;
 		string commandCode;
 		bool keyboardCommand;
+		Dictionary<string, bool> allowUsers;
 			
 		/// <summary>
         /// Версия 8.x
@@ -115,6 +116,22 @@ namespace Telemonitor
 			}
 		}
 		
+		/// <summary>
+        /// Список пользователей Telegram, которым
+        /// разрешен доступ к данной команде
+        /// </summary>
+		public Dictionary<string, bool> AllowUsers
+		{
+			get 
+			{
+				return allowUsers;
+			}
+			set
+			{
+				allowUsers = value;	
+			}
+		}
+		
 		#region Equals and GetHashCode implementation
 		// The code in this region is useful if you want to use this structure in collections.
 		// If you don't need it, you can just remove the region and the ": IEquatable<Structures>" declaration.
@@ -162,7 +179,7 @@ namespace Telemonitor
 	{
 		string commandName;
 		string commandDescr;
-		string commandCode;
+		string commandCode;		
 		bool keyboardCommand; 
 			
 		/// <summary>
@@ -272,6 +289,7 @@ namespace Telemonitor
 		string dbName;
 		int dbVersion;
 		string dbConString;
+		Dictionary<string, bool> allowUsers; 
 		List<DBCommand> commands;
 		
 		/// <summary>
@@ -331,6 +349,22 @@ namespace Telemonitor
 			set
 			{
 				commands = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Список пользователей Telegram, которым
+        /// разрешен доступ к базе данных (к командам базы данных)
+        /// </summary>
+		public Dictionary<string, bool> AllowUsers
+		{
+			get 
+			{
+				return allowUsers;
+			}
+			set
+			{
+				allowUsers = value;	
 			}
 		}
 		

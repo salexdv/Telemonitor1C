@@ -380,39 +380,58 @@ namespace Telemonitor
 		private void listener_CheckMessage(TelegramMessage message)			
 		{
 			string text = message.ToString();
-			string param = extractParamForCommand(text, out text);
+			string username = message.from.username;
+			string param = extractParamForCommand(text, out text);		
 			text = text.ToLower();
 			
-			if (text == "/start" || text == "/help" || text == "/settings") {
-				// Запрошен список команд
-				SendMessage(message.chat.id, tmSettings.GetCommands(), tmSettings.GetKeyboardCommands());
-			}
-			else if (text == "/screen") {
-				// Запрошен скриншот всей области экрана
-				string fileName = getScreenShot();
-				SendPhoto(message.chat.id, fileName);
-				File.Delete(fileName);
-			}
-			else {				
-				object cmd = tmSettings.GetCommandByName(text);
-				if (cmd != null) {
-					// Запрошена команда из списка
-					if (!messageOrder.ContainsKey(message.message_id)) {
-						TelegramCommand tCommand = new TelegramCommand();
-						tCommand.Message = message;
-						tCommand.Command = (Command)cmd;
-						tCommand.Parameters = param;
-						messageOrder.Add(message.message_id, tCommand);
-						BackgroundWorker executer = new BackgroundWorker();
-						executer.WorkerSupportsCancellation = true;
-						executer.DoWork += new DoWorkEventHandler(ExecuteCommand);
-						executer.RunWorkerAsync(tCommand);
+			// Фильтрация пользователей
+			if (tmSettings.AllowableUser(username)) {
+			
+				if (text == "/start" || text == "/help" || text == "/settings") {
+					// Запрошен список команд
+					SendMessage(message.chat.id, tmSettings.GetCommands(username), tmSettings.GetKeyboardCommands(username));
+				}
+				else if (text == "/screen") {
+					// Запрошен скриншот всей области экрана
+					if (tmSettings.AllowToGetScreenshot(username)) {
+						string fileName = getScreenShot();
+						SendPhoto(message.chat.id, fileName);
+						File.Delete(fileName);
+					}
+					else {
+						SendMessage(message.chat.id, "У вас нет доступа к данной команде");	
 					}
 				}
-				else {
-					// unknow command
-					SendMessage(message.chat.id, "Неизвестная команда");
+				else {				
+					object cmd = tmSettings.GetCommandByName(text);
+					if (cmd != null) {
+						// Запрошена команда из списка
+						if (!messageOrder.ContainsKey(message.message_id)) {
+							Command cur_command = (Command)cmd;							
+							if (tmSettings.AllowableUserForCommand(username, cur_command)) {
+								TelegramCommand tCommand = new TelegramCommand();
+								tCommand.Message = message;
+								tCommand.Command = cur_command;
+								tCommand.Parameters = param;
+								messageOrder.Add(message.message_id, tCommand);
+								BackgroundWorker executer = new BackgroundWorker();
+								executer.WorkerSupportsCancellation = true;
+								executer.DoWork += new DoWorkEventHandler(ExecuteCommand);
+								executer.RunWorkerAsync(tCommand);
+							}
+							else {
+								SendMessage(message.chat.id, "У вас нет доступа к данной команде");
+							}
+						}
+					}
+					else {
+						// unknow command
+						SendMessage(message.chat.id, "Неизвестная команда");
+					}
 				}
+			}
+			else {
+				SendMessage(message.chat.id, "У вас нет доступа к данному боту");
 			}
 		}
 		
