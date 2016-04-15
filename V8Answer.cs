@@ -24,16 +24,22 @@ namespace Telemonitor
 		/// Имя возвращаемого файла
 		/// </summary>
 		public string FileName {get; set;}
+		
+		/// <summary>
+		/// Признак ответа на команду (команда с запросом параметров)
+		/// </summary>
+		public bool Dialog {get; set;}
 				
 		/// <summary>
 		/// Создает объект V8Answer 
 		/// </summary>
 		/// <param name="txt">Текст ответа</param>
 		/// <param name="fName">Возвращаемый файл</param>
-		public V8Answer(string txt, string fName)
+		public V8Answer(string txt, string fName, bool isDialog)
 		{
 			Text = txt;
 			FileName = fName;
+			Dialog = isDialog;
 		}
 	}
 }

@@ -50,6 +50,18 @@ namespace Telemonitor
 	    [JsonProperty("text")]
 	    public string text { get; set; }
 	    
+	    /// <summary>
+	    /// Ответ на сообщение
+	    /// </summary>
+	    [JsonProperty("reply_to_message")]
+	    public TelegramMessage reply_to_message { get; set; }	    
+	    
+	    /// <summary>
+	    /// Ответ на сообщение
+	    /// </summary>
+	    [JsonProperty("forward_from")]
+	    public TelegramUser forward_from { get; set; }	
+	    
 	    public override string ToString()
         {
 	    	return text.Trim();

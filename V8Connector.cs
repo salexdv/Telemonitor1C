@@ -24,6 +24,21 @@ namespace Telemonitor
 		private Command excCommand;
 		
 		/// <summary>
+		/// Имя пользователя Telegram
+		/// </summary>
+		private string t_username;
+		
+		/// <summary>
+		/// first_name пользователя Telegram
+		/// </summary>
+		private string t_first_name;
+		
+		/// <summary>
+		/// last_name пользователя Telegram
+		/// </summary>
+		private string t_last_name;
+		
+		/// <summary>
 		/// Параметры выполняемой команды
 		/// </summary>
 		private string excParams;
@@ -71,6 +86,54 @@ namespace Telemonitor
 			}
 						
 		}
+        
+        /// <summary>
+        /// Имя пользователя Telegram
+        /// </summary>
+        public string TelegramUserName
+		{
+			get
+			{
+				return this.t_username;
+			}
+			set
+			{
+				this.t_username = value;
+			}
+						
+		}
+        
+        /// <summary>
+        /// first_name пользователя Telegram
+        /// </summary>
+        public string TelegramFirstName
+		{
+			get
+			{
+				return this.t_first_name;
+			}
+			set
+			{
+				this.t_first_name = value;
+			}
+						
+		}
+        
+        /// <summary>
+        /// last_name пользователя Telegram
+        /// </summary>
+        public string TelegramLastName
+		{
+			get
+			{
+				return this.t_last_name;
+			}
+			set
+			{
+				this.t_last_name = value;
+			}
+						
+		}
 			
 		/// <summary>
         /// Конструктор класса		
@@ -91,6 +154,7 @@ namespace Telemonitor
 		{
 			string result = "";
 			string fName = "";
+			bool isDialog = false; 			
 			string v8version = this.excCommand.Version.ToString();
 			
 			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);
@@ -106,10 +170,15 @@ namespace Telemonitor
                 object externalData = GetProperty(null, "ExternalDataProcessors");                
                 object executer = Method(externalData, "Create", new object[2] { runPath + "executer" + v8version + ".tep", this.safeMode1C });               
                 SetProperty(executer, "Код", this.excCommand.Code);
-				SetProperty(executer, "ПараметрыКоманды", this.excParams);                
+				SetProperty(executer, "ПараметрыКоманды", this.excParams);
+				SetProperty(executer, "username", this.t_username);
+				SetProperty(executer, "first_name", this.t_first_name);
+				SetProperty(executer, "last_name", this.t_last_name);
+				SetProperty(executer, "command", this.excCommand.ID);
                 Method(executer, "ExecuteCode", new object[0]);                
                 result = (string)GetProperty(executer, "Результат");
-				fName = (string)GetProperty(executer, "Результат_Файл");                
+				fName = (string)GetProperty(executer, "Результат_Файл");
+				isDialog = (bool)GetProperty(executer, "ДиалогСПараметрами");
                 Marshal.Release(Marshal.GetIDispatchForObject(executer));
                 Marshal.Release(Marshal.GetIDispatchForObject(externalData));
                 Marshal.ReleaseComObject(executer);
@@ -129,7 +198,7 @@ namespace Telemonitor
 				this.success = false;
             }  
           
-            return new V8Answer(result, fName);
+            return new V8Answer(result, fName, isDialog);
 		}
 		
 		/// <summary>

@@ -406,4 +406,109 @@ namespace Telemonitor
 		}
 		#endregion
 	}
+	
+	/// <summary>
+	/// Структура для хранения информации о сообщении из базы данных Telemonitor.db 
+	/// </summary>
+	public class MessageTDB
+	{		
+		string direct;
+		int message_id;
+		int parent_id;
+		int user_id;
+		int chat_id;
+		string text;
+		
+		/// <summary>
+        /// Направление сообщения (in/out)
+        /// </summary>
+		public string Direct
+		{
+			get 
+			{
+				return direct;
+			}
+			set
+			{
+				direct = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Идентификатор сообщения
+        /// </summary>
+		public int MessageID
+		{
+			get 
+			{
+				return message_id;
+			}
+			set
+			{
+				message_id = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Идентификатор родительского сообщения
+        /// </summary>
+		public int ParentID
+		{
+			get 
+			{
+				return parent_id;
+			}
+			set
+			{
+				parent_id = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Идентификатор пользователя
+        /// </summary>
+		public int UserID
+		{
+			get 
+			{
+				return user_id;
+			}
+			set
+			{
+				user_id = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Идентификатор чата
+        /// </summary>
+		public int ChatID
+		{
+			get 
+			{
+				return chat_id;
+			}
+			set
+			{
+				chat_id = value;	
+			}
+		}
+		
+		/// <summary>
+        /// Текст сообщения
+        /// </summary>
+		public string Text
+		{
+			get 
+			{
+				return text;
+			}
+			set
+			{
+				text = value;	
+			}
+		}
+				
+	}
+	
 }
