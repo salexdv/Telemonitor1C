@@ -361,6 +361,7 @@ namespace Telemonitor
 			mutAPI.ReleaseMutex();
 			//Logger.Debug(tmSettings, "mt release", false, mutLogger);
 		}
+				
 		
 		/// <summary>
         /// Отправляет фото image/png в заданный чат       
@@ -386,6 +387,28 @@ namespace Telemonitor
 		}
 		
 		/// <summary>
+		/// Разбивает сообщение на блоки по 4096 символов
+		/// и возвращает массив этих блоков (4096 - максимальная длина сообщения)
+		/// </summary>
+		/// <param name="message"></param>
+		/// <returns></returns>
+		private List<string> GetArrayOfMessages(string message)
+		{
+			int msgLength = 0;
+			string tmpMsg = (string)message.Clone();
+			List<string> messages = new List<string>();
+			
+			while (0 < tmpMsg.Length)
+			{
+				msgLength = Math.Min(tmpMsg.Length, 4096);
+				messages.Add(tmpMsg.Substring(0, msgLength));
+				tmpMsg = tmpMsg.Substring(msgLength);
+			}
+			
+			return messages;
+		}
+		
+		/// <summary>
         /// Отправляет сообщение в заданный чат       
         /// <PARAM name="chat_id">Идентификатор чата</PARAM>
 		/// <PARAM name="message">Текст сообщения</PARAM>        
@@ -396,27 +419,31 @@ namespace Telemonitor
 			
 			Logger.Debug(tmSettings, "url: " + url, false, mutLogger);
 			Logger.Debug(tmSettings, "response: " + message, false, mutLogger);
-			            
-			PostData pData = new PostData();
-			pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));						
-			pData.Params.Add(new PostDataParam("text", message, PostDataParamType.Field));
-			pData.Params.Add(new PostDataParam("reply_to_message_id", reply_to_message_id.ToString(), PostDataParamType.Field));
-			if (reply_to_message_id > 0) {
-				TelegramForceReply forceReply = new TelegramForceReply();
-				forceReply.force_reply = true;
-				pData.Params.Add(new PostDataParam("reply_markup", JsonConvert.SerializeObject(forceReply), PostDataParamType.Field));
-			}
-			else if (!String.IsNullOrEmpty(keyboard))
-				pData.Params.Add(new PostDataParam("reply_markup", keyboard, PostDataParamType.Field));
-			else
-			{
-				if (tmSettings.HideButtonsAfterMessage)
-					pData.Params.Add(new PostDataParam("reply_markup", JsonConvert.SerializeObject(new TelegramReplyKeyboardHide()), PostDataParamType.Field));
-			}
+			   
+			List<string> messages = GetArrayOfMessages(message);
 			
-			SendMultipartFormdata(url, pData);
-			
-			pData.Dispose();
+			foreach (string curMessage in messages) {			
+				PostData pData = new PostData();
+				pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));						
+				pData.Params.Add(new PostDataParam("text", curMessage, PostDataParamType.Field));
+				pData.Params.Add(new PostDataParam("reply_to_message_id", reply_to_message_id.ToString(), PostDataParamType.Field));
+				if (reply_to_message_id > 0) {
+					TelegramForceReply forceReply = new TelegramForceReply();
+					forceReply.force_reply = true;
+					pData.Params.Add(new PostDataParam("reply_markup", JsonConvert.SerializeObject(forceReply), PostDataParamType.Field));
+				}
+				else if (!String.IsNullOrEmpty(keyboard))
+					pData.Params.Add(new PostDataParam("reply_markup", keyboard, PostDataParamType.Field));
+				else
+				{
+					if (tmSettings.HideButtonsAfterMessage)
+						pData.Params.Add(new PostDataParam("reply_markup", JsonConvert.SerializeObject(new TelegramReplyKeyboardHide()), PostDataParamType.Field));
+				}
+				
+				SendMultipartFormdata(url, pData);
+				
+				pData.Dispose();
+			}
 			
 		}
 		
