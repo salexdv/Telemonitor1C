@@ -99,9 +99,5 @@
   <ItemGroup>
     <None Include="app.config" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="ProfilingSessions\Session20150907_104723.sdps" />
-    <Content Include="ProfilingSessions\Session20150907_104759.sdps" />
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -55,6 +55,7 @@ namespace Telemonitor
             
 			LogFile.WriteLine(message);
 			LogFile.Close();
+			LogFile.Dispose();
 			
 			if (useMutex)
 				mutLogger.ReleaseMutex();
