@@ -198,6 +198,17 @@ namespace Telemonitor
 				this.success = false;
             }  
           
+            Marshal.Release(Marshal.GetIDispatchForObject(Connection));
+            Marshal.ReleaseComObject(Connection);
+            Marshal.Release(Marshal.GetIDispatchForObject(v8Connector));
+            Marshal.ReleaseComObject(v8Connector);
+            
+            Connection = null;
+            v80Type = null;
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            GC.WaitForFullGCComplete();
+            
             return new V8Answer(result, fName, isDialog);
 		}
 		
@@ -205,11 +216,9 @@ namespace Telemonitor
         /// Деструктор       
         /// </summary>		
 		public void Dispose()
-        {            
-            Marshal.Release(Marshal.GetIDispatchForObject(Connection));
-            Marshal.ReleaseComObject(Connection);            
+        {                                   
             Connection = null;
-            v80Type = null;
+            v80Type = null;           
             GC.WaitForPendingFinalizers();
             GC.Collect();
             GC.WaitForFullGCComplete();

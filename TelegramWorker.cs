@@ -268,9 +268,11 @@ namespace Telemonitor
 								
 				CurrentTime = DateTime.Now;
 				ts = CurrentTime - StartTime;
-				
-				if (ts.Milliseconds < interval)
+								
+				if (ts.Milliseconds < interval) {
+					Logger.Debug(tmSettings, "wt " + (interval - ts.Milliseconds).ToString(), false, mutLogger);
 					System.Threading.Thread.Sleep(interval - ts.Milliseconds);
+				}
 				
 				StartTime = DateTime.Now;
 				
@@ -280,37 +282,43 @@ namespace Telemonitor
 				string url = "https://api.telegram.org/bot{0}/getUpdates?offset=" + this.tmOffset.ToString();
 				Logger.Debug(tmSettings, "url: " + url, false, mutLogger);
 	
-				//Logger.Debug(tmSettings, "mt wait", false, mutLogger);
+				Logger.Debug(tmSettings, "mt wait", false, mutLogger);
 				mutAPI.WaitOne();
 				
 				request = CreateRequest(String.Format(url, botToken));
-				//Logger.Debug(tmSettings, "request created", false, mutLogger);
+				Logger.Debug(tmSettings, "request created", false, mutLogger);
 				
 				TelegramAnswer answer = null;
 				
-				using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
-					
-					//Logger.Debug(tmSettings, "response ok", false, mutLogger);
-													
-					using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
-			            string jsonText = reader.ReadToEnd();
-						// Убираем пикрограммы
-						jsonText = jsonText.Replace(Const.PIC_BUTTON_START_REP, "");
-						jsonText = jsonText.Replace(Const.PIC_BUTTON_OTHER_REP, "");					
-			            Logger.Debug(tmSettings, "request:" + jsonText, false, mutLogger);
-			            // Получение updates из JSON
-						answer = JsonConvert.DeserializeObject<TelegramAnswer>(jsonText);
-			            Logger.Debug(tmSettings, answer.ok.ToString(), false, mutLogger);			            
-			        }
-					
+				try {
+					using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
+						
+						Logger.Debug(tmSettings, "response ok", false, mutLogger);
+														
+						using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
+				            string jsonText = reader.ReadToEnd();
+							// Убираем пикрограммы
+							jsonText = jsonText.Replace(Const.PIC_BUTTON_START_REP, "");
+							jsonText = jsonText.Replace(Const.PIC_BUTTON_OTHER_REP, "");					
+				            Logger.Debug(tmSettings, "request:" + jsonText, false, mutLogger);
+				            // Получение updates из JSON
+							answer = JsonConvert.DeserializeObject<TelegramAnswer>(jsonText);
+				            Logger.Debug(tmSettings, answer.ok.ToString(), false, mutLogger);			            
+				        }
+						
+					}
+				}
+				catch (Exception respExc) {
+					Logger.Debug(tmSettings, "response err: " + respExc.Message, true, mutLogger);
 				}
 				
 				request = null;
 				
 				// Обработка, полученных updates
 				if (answer != null)
-					tmOffset = Math.Max(tmOffset, listener_CheckTelegramAnswer(answer));						
-				
+					tmOffset = Math.Max(tmOffset, listener_CheckTelegramAnswer(answer));
+									
+				Logger.Debug(tmSettings, "mt release", false, mutLogger);
 				mutAPI.ReleaseMutex();
 								
 			}
@@ -324,9 +332,9 @@ namespace Telemonitor
         /// </summary>
 		private void SendMultipartFormdata(string url, PostData pData)
 		{
-			//Logger.Debug(tmSettings, "mt wait", false, mutLogger);
+			Logger.Debug(tmSettings, "smfd mt wait", false, mutLogger);
 			mutAPI.WaitOne();
-			//Logger.Debug(tmSettings, "mt success", false, mutLogger);
+			Logger.Debug(tmSettings, "smfd mt success", false, mutLogger);
 			
 			HttpWebRequest request = CreateRequest(String.Format(url, botToken));
 			request.Method = WebRequestMethods.Http.Post;			
@@ -338,27 +346,27 @@ namespace Telemonitor
 			
 			request.ContentLength = postDataStream.Length;
 			
-			//Logger.Debug(tmSettings, "request created", false, mutLogger);
+			Logger.Debug(tmSettings, "smfd request created", false, mutLogger);
 									  		
 			using (Stream s = request.GetRequestStream())
 			{
-			    //Logger.Debug(tmSettings, "write to stream", false, mutLogger);
+			    Logger.Debug(tmSettings, "smfd write to stream", false, mutLogger);
 				postDataStream.WriteTo(s);
-				//Logger.Debug(tmSettings, "flush", false, mutLogger);
+				Logger.Debug(tmSettings, "smfd flush", false, mutLogger);
 			    postDataStream.Flush();						    			    
 			}
 			
-			//Logger.Debug(tmSettings, "get response", false, mutLogger);
-			
+			Logger.Debug(tmSettings, "smfd get response", false, mutLogger);
+						
 			using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
 				
-				//Logger.Debug(tmSettings, "response ok", false, mutLogger);
+				Logger.Debug(tmSettings, "smfd response ok", false, mutLogger);
 				
 				using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
 		            string jsonText = reader.ReadToEnd();
-		            Logger.Debug(tmSettings, "answer to response: " + jsonText, false, mutLogger);
+		            Logger.Debug(tmSettings, "smfd answer to response: " + jsonText, false, mutLogger);
 					TelegramAnswerMessage answer = JsonConvert.DeserializeObject<TelegramAnswerMessage>(jsonText);					
-		            Logger.Debug(tmSettings, answer.ok.ToString());
+		            Logger.Debug(tmSettings, "smfd " + answer.ok.ToString());
 		            if (!answer.ok)
 		            	Logger.Write(answer.description, true, mutLogger);
 		            else
@@ -372,7 +380,7 @@ namespace Telemonitor
 			postDataStream.Dispose();
 
 			mutAPI.ReleaseMutex();
-			//Logger.Debug(tmSettings, "mt release", false, mutLogger);
+			Logger.Debug(tmSettings, "smfd mt release", false, mutLogger);
 			GC.WaitForPendingFinalizers();
 			GC.Collect();
 		}
@@ -546,6 +554,7 @@ namespace Telemonitor
 		private void ExecuteCommand(object sender, DoWorkEventArgs e)
 		{
 			TelegramCommand tCommand = (TelegramCommand)e.Argument;
+			
 			V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters, tmSettings.SafeMode1C);
 			connector.TelegramUserName = tCommand.Message.from.username;
 			connector.TelegramFirstName = tCommand.Message.from.first_name;
@@ -571,16 +580,19 @@ namespace Telemonitor
 			}
 			else
 				SendMessage(tCommand.Message.chat.id, "Ошибка при выполнении команды");
-			
+						
 			result = null;
-			connector.Dispose();
+			connector.Dispose();								
 			
 			messageOrder.Remove(tCommand.Message.message_id);
 			
+			tCommand = null;
+						
+			((BackgroundWorker)sender).CancelAsync();			
+			((BackgroundWorker)sender).Dispose();
+			
 			GC.WaitForPendingFinalizers();
 			GC.Collect();
-			
-			((BackgroundWorker)sender).CancelAsync();				
 			
 		}
 		
