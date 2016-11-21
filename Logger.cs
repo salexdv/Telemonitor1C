@@ -24,8 +24,9 @@ namespace Telemonitor
 		/// <returns>Имя файла лога</returns>
 		private static string GetLogFileName()
 		{
-			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);			
-			return runPath + "telemonitor.log";					
+			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);						
+			//return runPath + "telemonitor_" + Thread.CurrentThread.ManagedThreadId.ToString() + ".log";
+			return runPath + "telemonitor.log";
 		}
 		
 		/// <summary>

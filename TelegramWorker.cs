@@ -138,7 +138,9 @@ namespace Telemonitor
 				cmd.Parameters.AddWithValue("@text", (message.text != null) ? message.text : "");
 				cmd.Parameters.AddWithValue("@date", message.date);				
 				try {
+					Logger.Debug(tmSettings, "sql start insert", false, mutLogger);	
 					cmd.ExecuteNonQuery();
+					Logger.Debug(tmSettings, "sql insert ok", false, mutLogger);	
 				}
 				catch (SQLiteException ex) {
 					Logger.Debug(tmSettings, "sql ins error: " + ex.Message.ToString(), true, mutLogger);	
@@ -262,30 +264,31 @@ namespace Telemonitor
 			DateTime StartTime = new DateTime(2000, 1, 1);
 			DateTime CurrentTime = DateTime.Now;
 			TimeSpan ts = CurrentTime - StartTime;
-			int interval = tmSettings.Interval * 1000;
-				
+			int interval = tmSettings.Interval * 1000;				
+			HttpWebRequest request = null;
+			
 			while (!BackgroundListener.CancellationPending) {
 								
 				CurrentTime = DateTime.Now;
 				ts = CurrentTime - StartTime;
-								
+										
 				if (ts.Milliseconds < interval) {
 					Logger.Debug(tmSettings, "wt " + (interval - ts.Milliseconds).ToString(), false, mutLogger);
 					System.Threading.Thread.Sleep(interval - ts.Milliseconds);
-				}
+				}				
 				
 				StartTime = DateTime.Now;
 				
-				// Получение updates с заданной периодичностью
-				HttpWebRequest request = null;
-											
+				// Получение updates с заданной периодичностью													
 				string url = "https://api.telegram.org/bot{0}/getUpdates?offset=" + this.tmOffset.ToString();
 				Logger.Debug(tmSettings, "url: " + url, false, mutLogger);
 	
 				Logger.Debug(tmSettings, "mt wait", false, mutLogger);
 				mutAPI.WaitOne();
-				
+								
 				request = CreateRequest(String.Format(url, botToken));
+				request.Timeout = 3000;
+				
 				Logger.Debug(tmSettings, "request created", false, mutLogger);
 				
 				TelegramAnswer answer = null;
@@ -366,17 +369,17 @@ namespace Telemonitor
 		            string jsonText = reader.ReadToEnd();
 		            Logger.Debug(tmSettings, "smfd answer to response: " + jsonText, false, mutLogger);
 					TelegramAnswerMessage answer = JsonConvert.DeserializeObject<TelegramAnswerMessage>(jsonText);					
-		            Logger.Debug(tmSettings, "smfd " + answer.ok.ToString());
+		            Logger.Debug(tmSettings, "smfd " + answer.ok.ToString(), false, mutLogger);		            
 		            if (!answer.ok)
 		            	Logger.Write(answer.description, true, mutLogger);
 		            else
-		            	SaveMessageToDB(answer.message, "out");
+		            	SaveMessageToDB(answer.message, "out");		            
 		        }
 				
 			}
         				
-			request = null;				
-			postDataStream.Close();			
+			request = null;							
+			postDataStream.Close();						
 			postDataStream.Dispose();
 
 			mutAPI.ReleaseMutex();
