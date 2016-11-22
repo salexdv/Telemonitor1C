@@ -21,6 +21,7 @@ using System.Web;
 using System.Data.SQLite;
 using Newtonsoft.Json;
 using System.Timers;
+using System.Diagnostics;
 
 namespace Telemonitor
 {	
@@ -558,35 +559,118 @@ namespace Telemonitor
 		{
 			TelegramCommand tCommand = (TelegramCommand)e.Argument;
 			
-			V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters, tmSettings.SafeMode1C);
-			connector.TelegramUserName = tCommand.Message.from.username;
-			connector.TelegramFirstName = tCommand.Message.from.first_name;
-			connector.TelegramLastName = tCommand.Message.from.last_name;
-						
-			Logger.Debug(tmSettings, "Запуск команды " + tCommand.Command.ID + " на выполнение", false, mutLogger);			
-			// Создание ComConnector и выполнение кода команды
-			V8Answer result = connector.Execute(mutLogger);
-			Logger.Debug(tmSettings, "Команда " + tCommand.Command.ID + " выполнена", false, mutLogger);
+			if (tCommand.Command.Type == commandTypes.command1C) {
 			
-			if (connector.Success) {
+				// Запуск команды в базе 1С
+				V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters, tmSettings.SafeMode1C);
+				connector.TelegramUserName = tCommand.Message.from.username;
+				connector.TelegramFirstName = tCommand.Message.from.first_name;
+				connector.TelegramLastName = tCommand.Message.from.last_name;
+							
+				Logger.Debug(tmSettings, "Запуск команды " + tCommand.Command.ID + " на выполнение", false, mutLogger);			
+				// Создание ComConnector и выполнение кода команды
+				V8Answer result = connector.Execute(mutLogger);
+				Logger.Debug(tmSettings, "Команда " + tCommand.Command.ID + " выполнена", false, mutLogger);
 				
-				int reply_to_message_id = (result.Dialog) ? tCommand.Message.message_id : 0;
+				if (connector.Success) {
+					
+					int reply_to_message_id = (result.Dialog) ? tCommand.Message.message_id : 0;
+					
+					if (!String.IsNullOrEmpty(result.Text))
+						SendMessage(tCommand.Message.chat.id, result.Text, "", reply_to_message_id);
+					
+					if (!String.IsNullOrEmpty(result.FileName))
+						SendDocument(tCommand.Message.chat.id, result.FileName);
+					
+					if (String.IsNullOrEmpty(result.Text) && String.IsNullOrEmpty(result.FileName)) 
+						SendMessage(tCommand.Message.chat.id, "Команда выполнена");
+				}
+				else
+					SendMessage(tCommand.Message.chat.id, "Ошибка при выполнении команды");
 				
-				if (!String.IsNullOrEmpty(result.Text))
-					SendMessage(tCommand.Message.chat.id, result.Text, "", reply_to_message_id);
-				
-				if (!String.IsNullOrEmpty(result.FileName))
-					SendDocument(tCommand.Message.chat.id, result.FileName);
-				
-				if (String.IsNullOrEmpty(result.Text) && String.IsNullOrEmpty(result.FileName)) 
-					SendMessage(tCommand.Message.chat.id, "Команда выполнена");
+				result = null;
+				connector.Dispose();								
 			}
-			else
-				SendMessage(tCommand.Message.chat.id, "Ошибка при выполнении команды");
+			else {				
+				
+				// Запуск команды OneScript
+				Logger.Debug(tmSettings, "Запуск команды oscript " + tCommand.Command.ID + " на выполнение", false, mutLogger);			
+				
+				StringBuilder output = new StringBuilder();
+				System.Diagnostics.Process oscript = new Process();
+				
+				if (String.IsNullOrEmpty(tmSettings.OScriptPath))
+					oscript.StartInfo.FileName = "oscript";
+				else {
+					if (File.Exists(tmSettings.OScriptPath))
+						oscript.StartInfo.FileName = tmSettings.OScriptPath;
+					else {						
+						SendMessage(tCommand.Message.chat.id, "oscript не найден по указанному пути");
+						Logger.Debug(tmSettings, "oscript не найден по указанному пути: " + tmSettings.OScriptPath, true, mutLogger);
+					}
+				}
+				
+				if (!String.IsNullOrEmpty(oscript.StartInfo.FileName)) {
+				
+					oscript.StartInfo.Arguments = "\"" + tCommand.Command.ConnectionString + "\"";
+					
+					if (!String.IsNullOrEmpty(tCommand.Parameters)) {
+						string oscParam = tCommand.Parameters.Trim().Replace(' ', '_').Replace(',', ' ');
+						oscript.StartInfo.Arguments += " " + oscParam;
+					}
+									
+					oscript.StartInfo.UseShellExecute = false;
+					oscript.StartInfo.RedirectStandardOutput = true;
+					oscript.StartInfo.StandardOutputEncoding = Encoding.GetEncoding(866);
+					oscript.StartInfo.CreateNoWindow = true;				
+					
+					try {
+						oscript.Start();	
+					}
+					catch (Exception ex) {
+						SendMessage(tCommand.Message.chat.id, "Ошибка при выполнении команды");
+						Logger.Debug(tmSettings, "Ошибка при выполнении команды oscript: " + ex.Message, true, mutLogger);
+					}
+					
+					string curString = "";
+					bool dialog = false;
+					string resFile = "";
+					
+					while (!oscript.StandardOutput.EndOfStream) 
+	 				{
+						curString = oscript.StandardOutput.ReadLine();
 						
-			result = null;
-			connector.Dispose();								
-			
+						if (curString.StartsWith("Результат_Файл") && String.IsNullOrEmpty(resFile)) {
+							resFile = curString.Substring(15).Trim();
+							if (resFile.StartsWith("=")) {
+								resFile = resFile.Substring(2).Trim();
+								continue;
+							}
+							else
+								resFile = "";
+						}
+						
+						if (curString == "ДиалогСПараметрами")
+							dialog = true;
+						else
+							output.AppendLine(curString);
+	 				}
+					
+					int reply_to_message_id = (dialog) ? tCommand.Message.message_id : 0;
+	
+					if (0 < output.Length || !String.IsNullOrEmpty(resFile)) {
+						if (0 < output.Length)
+							SendMessage(tCommand.Message.chat.id, output.ToString(), "", reply_to_message_id);
+						if (!String.IsNullOrEmpty(resFile))
+							SendDocument(tCommand.Message.chat.id, resFile);
+					}
+					else
+						SendMessage(tCommand.Message.chat.id, "Команда выполнена");
+					
+					Logger.Debug(tmSettings, "Команда oscript" + tCommand.Command.ID + " выполнена", false, mutLogger);
+				}
+			}
+									
 			messageOrder.Remove(tCommand.Message.message_id);
 			
 			tCommand = null;

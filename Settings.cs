@@ -37,6 +37,7 @@ namespace Telemonitor
 		private bool buttonsHideKeyboard;
 		private bool buttonsUsePic;
 		private int buttonsNumRows;
+		private string oscriptPath;
 				
 		/// <summary>
         /// Получает настройку из ini файла, преобразуя значение к заданному типу        
@@ -150,6 +151,8 @@ namespace Telemonitor
 					this.allowUsers = GetWhiteListOfUsers((string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "Users", typeof(string), ""));
 					this.screenOwners = GetWhiteListOfUsers((string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "ScreenOwners", typeof(string), ""));					
 					
+					this.oscriptPath = (string)GetAdditionalParamFromINI(iniSettings, "Environment", "OneScriptPath", typeof(string), "");
+					
 					if (!String.IsNullOrEmpty(botToken)) {
 						if (this.interval == 0)
 							this.interval = 1;
@@ -181,6 +184,7 @@ namespace Telemonitor
 					iniSettings.IniWriteValue("Buttons", "HideButtonsAfterMessage", "1");
 					iniSettings.IniWriteValue("Buttons", "NumRowsOfButtons", "2");
 					iniSettings.IniWriteValue("WhiteList", "Users", "");
+					iniSettings.IniWriteValue("OneScriptPath", "Environment", "");
 					
 					Logger.Write("Создан файл настроек \"settings.ini\"");
 				}
@@ -202,7 +206,7 @@ namespace Telemonitor
         /// </summary>
         private List<DBCommand> GetDbCommands(string commandDir)
 		{
-        	List<DBCommand> commands = new List<DBCommand>();
+        	List<DBCommand> baseCommands = new List<DBCommand>();
         	
         	string fileExtention = "";
         	string[] cmdFiles = Directory.GetFiles(commandDir, "*.tcm*");
@@ -233,7 +237,7 @@ namespace Telemonitor
         						newCommand.KeyboardCommand = true;
         					else
         						newCommand.KeyboardCommand = false;
-        					commands.Add(newCommand);
+        					baseCommands.Add(newCommand);
         				}
         				else {
         					Logger.Write(cmdFile + ": файл не содержит кода команды", true);
@@ -252,7 +256,7 @@ namespace Telemonitor
         		}        		
         	}
         	
-        	return commands;
+        	return baseCommands;
 		}
 		
 		/// <summary>
@@ -262,8 +266,7 @@ namespace Telemonitor
 		private bool GetDbSettings(string[] databases)
 		{
 			
-			this.bases = new List<DBStruct>();
-			this.commands = new Dictionary<string, Command>();
+			this.bases = new List<DBStruct>();			
 			
 			foreach (string dir in databases) {
 								
@@ -313,22 +316,23 @@ namespace Telemonitor
 						
 						if (baseOK) {
 																												
-							List<DBCommand> commands = GetDbCommands(dirName);
+							List<DBCommand> baseCommands = GetDbCommands(dirName);
 							
-							if (commands.Count > 0) {
+							if (baseCommands.Count > 0) {
 								
 								DBStruct newBase = new DBStruct();																										
 								newBase.Name = dbName;
 								newBase.ConnectionString = conString;
 								newBase.Version = dbVersion;
-								newBase.Commands = commands;
+								newBase.Commands = baseCommands;
 								newBase.AllowUsers = GetWhiteListOfUsers(wl_users);
 								this.bases.Add(newBase);
 								
-								foreach (DBCommand cmd in commands) {									
+								foreach (DBCommand cmd in baseCommands) {									
 									string commandID = "/" + dbName + "_" + cmd.Name;									
 									Command baseCmd = new Command();
-									baseCmd.ID = commandID; 
+									baseCmd.Type = commandTypes.command1C;
+									baseCmd.ID = commandID;
 									baseCmd.Description = cmd.Description;
 									baseCmd.Code = cmd.Code;
 									baseCmd.Version = newBase.Version;
@@ -397,16 +401,107 @@ namespace Telemonitor
 		}
 		
 		/// <summary>
+        /// Проверяет существование скриптов        
+        /// <PARAM name="runPath">Путь исполняемого файла</PARAM>
+        /// </summary>
+		private bool CheckScriptsSettings(string runPath)
+		{						
+			bool scrOK = true;
+			
+			string dirBaseName = runPath + "scripts\\";			
+			
+			if (Directory.Exists(dirBaseName)) {
+			
+				string[] cmdFiles = Directory.GetFiles(dirBaseName, "*.os*");
+				
+				string iniFileName = dirBaseName + "scripts.ini";
+				
+				iniFile iniSettings = new iniFile(iniFileName);
+				
+				string wl_users = (string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "Users", typeof(string), "");
+				
+				foreach (string cmdFile in cmdFiles) {
+					
+					string commandName = Path.GetFileNameWithoutExtension(cmdFile);
+	        		commandName = commandName.Replace(" ", "");	        		
+	        		
+	        		try
+	        		{
+	        			StreamReader reader = File.OpenText(cmdFile);
+	        			string commandDescr = reader.ReadLine();
+	        			commandDescr.Trim();
+	        			if (commandDescr.StartsWith(@"//"))
+	        				commandDescr = commandDescr.Substring(3);
+	        			
+	        			if (commandDescr != null)
+	        			{
+	        				string commandCode = reader.ReadToEnd();
+	        				reader.Close();
+	        				
+	        				if (!String.IsNullOrEmpty(commandCode)) {
+	        					
+	        					Command scriptCmd = new Command();
+	        					commandName = "/" + commandName;
+	        					scriptCmd.Type = commandTypes.commandOScript;
+								scriptCmd.ID = commandName;
+								scriptCmd.Description = commandDescr;
+								scriptCmd.Code = commandCode;
+								scriptCmd.ConnectionString = cmdFile;
+								scriptCmd.AllowUsers = GetWhiteListOfUsers(wl_users);
+								this.commands.Add(commandName.ToLower(), scriptCmd);	        						        					
+	        				}
+	        				else {
+	        					Logger.Write(cmdFile + ": файл не содержит кода команды", true);
+	        				}
+	        				
+	        			}
+	        			else
+	        			{
+	        				Logger.Write(cmdFile + ": файл не содержит записей", true);
+	        			}
+	        			
+	        		}
+	        		catch
+	        		{
+	        			Logger.Write(cmdFile + ": не удалось прочитать файл", true);
+	        		}
+					
+				}
+				
+			}
+			else {
+						
+				try				
+				{
+					Directory.CreateDirectory(dirBaseName);
+					Logger.Write("Создан каталог \"scripts\"");
+				}
+				catch
+				{
+					Logger.Write("Не удалось создать каталог \"scripts\"");
+					scrOK = false;
+				}				
+				
+			}
+				
+			
+			return scrOK;			
+			
+		}
+		
+		/// <summary>
         /// Конструктор класса        
         /// </summary>
 		public Settings()
 		{		
 			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);
+			this.commands = new Dictionary<string, Command>();
 						
 			bool iniOK = CheckMainINI(runPath);
 			bool dbOK = CheckDbSettings(runPath);
+			bool scrOK = CheckScriptsSettings(runPath);
 			
-			this.settingsExists = (iniOK && dbOK);
+			this.settingsExists = (iniOK && (dbOK || scrOK));
 		}
 		
 		/// <summary>
@@ -560,6 +655,17 @@ namespace Telemonitor
 			get 
 			{
 				return this.buttonsUsePic;
+			}
+		}
+		
+		/// <summary>
+        /// Путь к файлу oscript.exe
+        /// </summary>
+		public string OScriptPath
+		{
+			get 
+			{
+				return this.oscriptPath;
 			}
 		}
 		

@@ -11,12 +11,15 @@ using System.Collections.Generic;
 
 namespace Telemonitor
 {
+
+	public enum commandTypes {command1C, commandOScript};
 	
 	/// <summary>
 	/// Структура для хранения команды
 	/// </summary>
 	public struct Command : IEquatable<Command>
 	{		
+		commandTypes type;
 		int dbVersion;
 		string dbConString;
 		string commandID;
@@ -24,7 +27,22 @@ namespace Telemonitor
 		string commandCode;
 		bool keyboardCommand;
 		Dictionary<string, bool> allowUsers;
-			
+		
+		/// <summary>
+        /// Тип команды
+        /// </summary>
+		public commandTypes Type
+		{
+			get 
+			{
+				return type;
+			}
+			set
+			{
+				type = value;	
+			}
+		}
+		
 		/// <summary>
         /// Версия 8.x
         /// </summary>
