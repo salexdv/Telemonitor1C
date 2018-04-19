@@ -46,6 +46,11 @@ namespace Telemonitor
 		private int tmOffset;
 		
 		/// <summary>
+        /// Максимальное смещение для опроса getUpdates                       
+        /// </summary>
+		private int maxOffset;
+		
+		/// <summary>
         /// Mutex для записи лога из разных потоков                       
         /// </summary>
 		private Mutex mutLogger;
@@ -54,12 +59,22 @@ namespace Telemonitor
         /// Mutex для запросов к API                       
         /// </summary>
 		private Mutex mutAPI;
-							
+		
+		/// <summary>
+        /// Последнее время запуска обработчика запросов                       
+        /// </summary>
+		private DateTime LastStartTime;		
+		
 		/// <summary>
 		/// Основной обработчик для опроса API на предмет
 		/// новый сообщений
 		/// </summary>
 		private BackgroundWorker BackgroundListener;
+		
+		/// <summary>
+		/// Обработчик для проверки работоспособности
+		/// </summary>
+		private BackgroundWorker BackgroundChecker;
 		
 		/// <summary>
         /// Очередь необработанных сообщений                       
@@ -240,6 +255,7 @@ namespace Telemonitor
 		public TelegramWorker(Settings settings)
 		{			
 			this.tmOffset = 0;
+			this.maxOffset = 0;
 			this.tmSettings = settings;			
 			this.botToken = settings.BotToken;			
 			this.mutLogger = new Mutex();
@@ -248,17 +264,79 @@ namespace Telemonitor
 			this.sqlConnection = GetSQLConnection();
 		}
 		
+		void BackgroundListener_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+		{
+    		if (e.Cancelled == true) {        		
+        		Logger.Debug(tmSettings, "worker canceled", false, mutLogger);	
+    		}
+    		else if (e.Error != null) {        		
+        		Logger.Debug(tmSettings, "worker error: " + e.Error.Message, true, mutLogger);
+    		}
+			else if (e.Result == null) {
+				Logger.Debug(tmSettings, "worker stopped", true, mutLogger);
+			}
+    		else {        		
+        		Logger.Debug(tmSettings, "worker stopped: " + e.Result.ToString(), true, mutLogger);
+    		}
+		}
+		
+		/// <summary>
+        /// Основной обработчик BackgroundCheker                      
+        /// </summary>
+		void BackgroundChecker_DoWork(object sender, DoWorkEventArgs e)
+		{
+													
+			while (!BackgroundChecker.CancellationPending) {
+											
+				if (LastStartTime != new DateTime(1, 1, 1)) {
+				
+					DateTime CurrentTime = DateTime.Now;
+					TimeSpan ts = CurrentTime - LastStartTime;
+					int interval = tmSettings.Interval * 1000;				
+					
+					Logger.Debug(tmSettings, "checker: cur.time - " + CurrentTime.ToString() + ", ls.time - " + LastStartTime.ToString(), false, mutLogger);
+					
+					if (interval * 10 < ts.TotalMilliseconds) {
+						Logger.Debug(tmSettings, "restart BackgroundListener " + (ts.Milliseconds / 1000).ToString(), false, mutLogger);
+						LastStartTime = new DateTime(1, 1, 1);
+						BackgroundListener.CancelAsync();
+						BackgroundListener.Dispose();
+						this.tmOffset = Math.Max(this.tmOffset, this.maxOffset);
+						StartWork(false);
+						Logger.Debug(tmSettings, "BackgroundListener was restarted", false, mutLogger);
+						System.Threading.Thread.Sleep(interval * 10);
+					}
+					
+					System.Threading.Thread.Sleep(interval);					
+					
+				}
+								
+			}
+				
+		}
+		
 		/// <summary>
         /// Запускает работу с api.telegram.org                      
         /// </summary>
-		public void StartWork()
+		public void StartWork(bool restartChecker = true)
 		{
 			BackgroundListener = new BackgroundWorker();
 			BackgroundListener.WorkerSupportsCancellation = true;
 			BackgroundListener.DoWork += new DoWorkEventHandler(BackgroundListener_DoWork);
-			BackgroundListener.RunWorkerAsync();					
+			BackgroundListener.RunWorkerCompleted += new RunWorkerCompletedEventHandler(BackgroundListener_RunWorkerCompleted);			
+			BackgroundListener.RunWorkerAsync();
+
+			if (restartChecker) {
+				BackgroundChecker = new BackgroundWorker();
+				BackgroundChecker.WorkerSupportsCancellation = true;
+				BackgroundChecker.DoWork += new DoWorkEventHandler(BackgroundChecker_DoWork);
+				BackgroundChecker.RunWorkerAsync();
+			}
 		}
 		
+		/// <summary>
+        /// Основной обработчик BackgroundListener                      
+        /// </summary>
 		void BackgroundListener_DoWork(object sender, DoWorkEventArgs e)
 		{
 										
@@ -268,17 +346,20 @@ namespace Telemonitor
 			int interval = tmSettings.Interval * 1000;				
 			HttpWebRequest request = null;
 			
-			while (!BackgroundListener.CancellationPending) {
+			while ( !((BackgroundWorker)sender).CancellationPending ) {
 								
 				CurrentTime = DateTime.Now;
 				ts = CurrentTime - StartTime;
 										
-				if (ts.Milliseconds < interval) {
+				if (ts.TotalMilliseconds < interval) {
 					Logger.Debug(tmSettings, "wt " + (interval - ts.Milliseconds).ToString(), false, mutLogger);
 					System.Threading.Thread.Sleep(interval - ts.Milliseconds);
 				}				
 				
 				StartTime = DateTime.Now;
+				LastStartTime = StartTime;
+				
+				this.tmOffset = Math.Max(this.tmOffset, this.maxOffset);
 				
 				// Получение updates с заданной периодичностью													
 				string url = "https://api.telegram.org/bot{0}/getUpdates?offset=" + this.tmOffset.ToString();
@@ -288,7 +369,7 @@ namespace Telemonitor
 				mutAPI.WaitOne();
 								
 				request = CreateRequest(String.Format(url, botToken));
-				request.Timeout = 3000;
+				request.Timeout = 30000;
 				
 				Logger.Debug(tmSettings, "request created", false, mutLogger);
 				
@@ -320,8 +401,10 @@ namespace Telemonitor
 				
 				// Обработка, полученных updates
 				if (answer != null)
-					tmOffset = Math.Max(tmOffset, listener_CheckTelegramAnswer(answer));
-									
+					this.tmOffset = Math.Max(this.tmOffset, listener_CheckTelegramAnswer(answer));
+
+				this.maxOffset = Math.Max(this.tmOffset, this.maxOffset);
+				
 				Logger.Debug(tmSettings, "mt release", false, mutLogger);
 				mutAPI.ReleaseMutex();
 								
@@ -562,7 +645,7 @@ namespace Telemonitor
 			if (tCommand.Command.Type == commandTypes.command1C) {
 			
 				// Запуск команды в базе 1С
-				V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters, tmSettings.SafeMode1C);
+				V8Connector connector = new V8Connector(tCommand.Command, tCommand.Parameters, tmSettings);
 				connector.TelegramUserName = tCommand.Message.from.username;
 				connector.TelegramFirstName = tCommand.Message.from.first_name;
 				connector.TelegramLastName = tCommand.Message.from.last_name;
@@ -803,7 +886,7 @@ namespace Telemonitor
         /// <returns>int - номер последнего обработанного TelegramUpdate</returns>
 		private int listener_CheckUpdates(List<TelegramUpdate> updates)			
 		{
-			int newOffset = tmOffset;
+			int newOffset = this.tmOffset;
 			
 			foreach (TelegramUpdate update in updates) {
 				// Обработка каждого сообщения
@@ -830,7 +913,7 @@ namespace Telemonitor
 			{
 				// API вернул ошибку
 				Logger.Write(answer.description, true, mutLogger);
-				return tmOffset;
+				return this.tmOffset;
 			}
 			
 		}
@@ -839,7 +922,11 @@ namespace Telemonitor
         /// Останавливае работу с api.telegram.org                      
         /// </summary>
 		public void StopWork()
-		{			
+		{	
+			
+			BackgroundChecker.CancelAsync();
+			BackgroundChecker.Dispose();
+			
 			BackgroundListener.CancelAsync();
 			BackgroundListener.Dispose();			
 		}

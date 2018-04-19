@@ -56,7 +56,7 @@ namespace Telemonitor
 			this.trayMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
 			this.trayMenuItemExit});
 			this.trayMenu.Name = "trayMenu";
-			this.trayMenu.Size = new System.Drawing.Size(109, 26);
+			this.trayMenu.Size = new System.Drawing.Size(109, 26);			
 			// 
 			// trayMenuItemExit
 			// 

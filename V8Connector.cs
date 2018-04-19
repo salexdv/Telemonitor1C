@@ -62,6 +62,8 @@ namespace Telemonitor
         /// Признак запуска кода в безопасном режиме 1С
         /// </summary>
         private bool safeMode1C;
+        
+        private Settings tmSettings;
 
         private static BindingFlags FlagsSetProrerty = BindingFlags.Public | BindingFlags.Static | BindingFlags.SetProperty;
         private static BindingFlags FlagsGetProperty = BindingFlags.Public | BindingFlags.Static | BindingFlags.GetProperty;
@@ -140,11 +142,12 @@ namespace Telemonitor
 		/// <PARAM name="cmdObj">Команда</PARAM>		
 		/// <PARAM name="parameters">Параметры команды</PARAM>
         /// </summary>		        
-		public V8Connector(Command cmdObj, string parameters, bool safeMode1C)
+		public V8Connector(Command cmdObj, string parameters, Settings tmSettings)
 		{			
 			this.excCommand = cmdObj;			
 			this.excParams = parameters;
-			this.safeMode1C = safeMode1C;
+			this.safeMode1C = tmSettings.SafeMode1C;
+			this.tmSettings = tmSettings;
 		}
 		
 		/// <summary>
@@ -158,27 +161,40 @@ namespace Telemonitor
 			string v8version = this.excCommand.Version.ToString();
 			
 			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);
+			
+			//Logger.Debug(this.tmSettings, "Версия COM: " + v8version, false, mutLogger);
+						
 			runPath = Service.CheckPath(runPath);			
+			
+			//Logger.Debug(this.tmSettings, "Каталог запуска: " + runPath, false, mutLogger);
 			
 			this.success = true;
 			
-			v80Type = Type.GetTypeFromProgID("V" + v8version + ".COMConnector");
-            object v8Connector = Activator.CreateInstance(v80Type);
+			v80Type = null;
+            object v8Connector = null;
             try
             {            	
-            	Connection = v80Type.InvokeMember("Connect", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.InvokeMethod, null, v8Connector, new object[1] { this.excCommand.ConnectionString });            	
+            	v80Type = Type.GetTypeFromProgID("V" + v8version + ".COMConnector");
+            	v8Connector = Activator.CreateInstance(v80Type);
+            	//Logger.Debug(this.tmSettings, "V" + v8version + ".COMConnector создан", false, mutLogger);
+            	Connection = v80Type.InvokeMember("Connect", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.InvokeMethod, null, v8Connector, new object[1] { this.excCommand.ConnectionString });
+            	//Logger.Debug(this.tmSettings, "Connect", false, mutLogger);
                 object externalData = GetProperty(null, "ExternalDataProcessors");                
-                object executer = Method(externalData, "Create", new object[2] { runPath + "executer" + v8version + ".tep", this.safeMode1C });               
+                object executer = Method(externalData, "Create", new object[2] { runPath + "executer" + v8version + ".tep", this.safeMode1C });
+				//Logger.Debug(this.tmSettings, "ExternalDataProcessors", false, mutLogger);                
                 SetProperty(executer, "Код", this.excCommand.Code);
 				SetProperty(executer, "ПараметрыКоманды", this.excParams);
 				SetProperty(executer, "username", this.t_username);
 				SetProperty(executer, "first_name", this.t_first_name);
 				SetProperty(executer, "last_name", this.t_last_name);
 				SetProperty(executer, "command", this.excCommand.ID);
-                Method(executer, "ExecuteCode", new object[0]);                
+				//Logger.Debug(this.tmSettings, "Start executer", false, mutLogger);
+                Method(executer, "ExecuteCode", new object[0]);              
+				//Logger.Debug(this.tmSettings, "Finish executer", false, mutLogger);                
                 result = (string)GetProperty(executer, "Результат");
 				fName = (string)GetProperty(executer, "Результат_Файл");
 				isDialog = (bool)GetProperty(executer, "ДиалогСПараметрами");
+				//Logger.Debug(this.tmSettings, "Get properties", false, mutLogger);
                 Marshal.Release(Marshal.GetIDispatchForObject(executer));
                 Marshal.Release(Marshal.GetIDispatchForObject(externalData));
                 Marshal.ReleaseComObject(executer);
@@ -209,6 +225,7 @@ namespace Telemonitor
             GC.Collect();
             GC.WaitForFullGCComplete();
             
+            //Logger.Debug(this.tmSettings, "Answer", false, mutLogger);
             return new V8Answer(result, fName, isDialog);
 		}
 		

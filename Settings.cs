@@ -408,6 +408,7 @@ namespace Telemonitor
 		{						
 			bool scrOK = true;
 			
+			string fileExtention = "";
 			string dirBaseName = runPath + "scripts\\";			
 			
 			if (Directory.Exists(dirBaseName)) {
@@ -447,7 +448,17 @@ namespace Telemonitor
 								scriptCmd.Description = commandDescr;
 								scriptCmd.Code = commandCode;
 								scriptCmd.ConnectionString = cmdFile;
-								scriptCmd.AllowUsers = GetWhiteListOfUsers(wl_users);
+								scriptCmd.AllowUsers = GetWhiteListOfUsers(wl_users);								
+								
+								fileExtention = Path.GetExtension(cmdFile); 
+	        					if ( fileExtention.ToLower() == ".os_b" )
+	        						scriptCmd.KeyboardCommand = true;
+	        					else
+	        						scriptCmd.KeyboardCommand = false;
+	        					
+	        					if (scriptCmd.KeyboardCommand)
+										commandName += "_keyb";
+								
 								this.commands.Add(commandName.ToLower(), scriptCmd);	        						        					
 	        				}
 	        				else {
@@ -678,6 +689,8 @@ namespace Telemonitor
         	Command result = new Command();
         	if (this.commands.TryGetValue(commandName, out result))
         		return result;        	
+        	else if (this.commands.TryGetValue(commandName + "_keyb", out result))
+        		return result;
         	else
         		return null;
 						
