@@ -22,6 +22,7 @@ using System.Data.SQLite;
 using Newtonsoft.Json;
 using System.Timers;
 using System.Diagnostics;
+using xNet;
 
 namespace Telemonitor
 {	
@@ -296,7 +297,7 @@ namespace Telemonitor
 					
 					Logger.Debug(tmSettings, "checker: cur.time - " + CurrentTime.ToString() + ", ls.time - " + LastStartTime.ToString(), false, mutLogger);
 					
-					if (interval * 10 < ts.TotalMilliseconds) {
+					if (interval * 100 < ts.TotalMilliseconds) {
 						Logger.Debug(tmSettings, "restart BackgroundListener " + (ts.Milliseconds / 1000).ToString(), false, mutLogger);
 						LastStartTime = new DateTime(1, 1, 1);
 						BackgroundListener.CancelAsync();
@@ -304,10 +305,10 @@ namespace Telemonitor
 						this.tmOffset = Math.Max(this.tmOffset, this.maxOffset);
 						StartWork(false);
 						Logger.Debug(tmSettings, "BackgroundListener was restarted", false, mutLogger);
-						System.Threading.Thread.Sleep(interval * 10);
+						System.Threading.Thread.Sleep(interval * 100);
 					}
 					
-					System.Threading.Thread.Sleep(interval);					
+					System.Threading.Thread.Sleep(interval * 50);					
 					
 				}
 								
@@ -344,8 +345,7 @@ namespace Telemonitor
 			DateTime CurrentTime = DateTime.Now;
 			TimeSpan ts = CurrentTime - StartTime;
 			int interval = tmSettings.Interval * 1000;				
-			HttpWebRequest request = null;
-			
+						
 			while ( !((BackgroundWorker)sender).CancellationPending ) {
 								
 				CurrentTime = DateTime.Now;
@@ -367,36 +367,35 @@ namespace Telemonitor
 	
 				Logger.Debug(tmSettings, "mt wait", false, mutLogger);
 				mutAPI.WaitOne();
-								
-				request = CreateRequest(String.Format(url, botToken));
-				request.Timeout = 30000;
+												
+				HttpRequest request = CreateRequest();
 				
 				Logger.Debug(tmSettings, "request created", false, mutLogger);
 				
 				TelegramAnswer answer = null;
 				
-				try {
-					using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
-						
-						Logger.Debug(tmSettings, "response ok", false, mutLogger);
-														
-						using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
-				            string jsonText = reader.ReadToEnd();
-							// Убираем пикрограммы
-							jsonText = jsonText.Replace(Const.PIC_BUTTON_START_REP, "");
-							jsonText = jsonText.Replace(Const.PIC_BUTTON_OTHER_REP, "");					
-				            Logger.Debug(tmSettings, "request:" + jsonText, false, mutLogger);
-				            // Получение updates из JSON
-							answer = JsonConvert.DeserializeObject<TelegramAnswer>(jsonText);
-				            Logger.Debug(tmSettings, answer.ok.ToString(), false, mutLogger);			            
-				        }
-						
-					}
+				try {                    
+                    
+					HttpResponse response = request.Get(String.Format(url, botToken));
+                    string jsonText = response.ToString();
+                    
+                    response.None();
+                    response = null;
+                    
+                    // Убираем пикрограммы
+					jsonText = jsonText.Replace(Const.PIC_BUTTON_START_REP, "");
+					jsonText = jsonText.Replace(Const.PIC_BUTTON_OTHER_REP, "");					
+		            Logger.Debug(tmSettings, "request:" + jsonText, false, mutLogger);
+		            // Получение updates из JSON
+					answer = JsonConvert.DeserializeObject<TelegramAnswer>(jsonText);
+		            Logger.Debug(tmSettings, answer.ok.ToString(), false, mutLogger);
+                                                           
 				}
 				catch (Exception respExc) {
 					Logger.Debug(tmSettings, "response err: " + respExc.Message, true, mutLogger);
 				}
 				
+				request.Close();
 				request = null;
 				
 				// Обработка, полученных updates
@@ -423,53 +422,41 @@ namespace Telemonitor
 			mutAPI.WaitOne();
 			Logger.Debug(tmSettings, "smfd mt success", false, mutLogger);
 			
-			HttpWebRequest request = CreateRequest(String.Format(url, botToken));
-			request.Method = WebRequestMethods.Http.Post;			
+			HttpRequest request = CreateRequest();
 			request.KeepAlive = true;
-			request.Credentials = System.Net.CredentialCache.DefaultCredentials;
-			request.ContentType = "multipart/form-data; boundary=" + pData.Boundary;
-						
-			MemoryStream postDataStream = pData.GetPostData();
 			
-			request.ContentLength = postDataStream.Length;
-			
-			Logger.Debug(tmSettings, "smfd request created", false, mutLogger);
-									  		
-			using (Stream s = request.GetRequestStream())
-			{
-			    Logger.Debug(tmSettings, "smfd write to stream", false, mutLogger);
-				postDataStream.WriteTo(s);
-				Logger.Debug(tmSettings, "smfd flush", false, mutLogger);
-			    postDataStream.Flush();						    			    
+			foreach (PostDataParam param in pData.Params) {
+				if (param.Type == PostDataParamType.Field)
+					request.AddField(param.Name, param.Value);
+				else
+					request.AddFile(param.Name, param.Value);
 			}
 			
-			Logger.Debug(tmSettings, "smfd get response", false, mutLogger);
-						
-			using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) {
-				
-				Logger.Debug(tmSettings, "smfd response ok", false, mutLogger);
-				
-				using (StreamReader reader = new StreamReader(response.GetResponseStream())) {			            			            
-		            string jsonText = reader.ReadToEnd();
-		            Logger.Debug(tmSettings, "smfd answer to response: " + jsonText, false, mutLogger);
-					TelegramAnswerMessage answer = JsonConvert.DeserializeObject<TelegramAnswerMessage>(jsonText);					
-		            Logger.Debug(tmSettings, "smfd " + answer.ok.ToString(), false, mutLogger);		            
-		            if (!answer.ok)
-		            	Logger.Write(answer.description, true, mutLogger);
-		            else
-		            	SaveMessageToDB(answer.message, "out");		            
-		        }
-				
-			}
-        				
-			request = null;							
-			postDataStream.Close();						
-			postDataStream.Dispose();
+			Logger.Debug(tmSettings, "smfd post request", false, mutLogger);
+			
+			HttpResponse response = request.Post(String.Format(url, botToken));
+			string jsonText = response.ToString();
+			
+			response.None();
+			response = null;
+			
+			Logger.Debug(tmSettings, "smfd answer to response: " + jsonText, false, mutLogger);
+			TelegramAnswerMessage answer = JsonConvert.DeserializeObject<TelegramAnswerMessage>(jsonText);					
+            Logger.Debug(tmSettings, "smfd " + answer.ok.ToString(), false, mutLogger);		            
+            
+            if (!answer.ok)
+            	Logger.Write(answer.description, true, mutLogger);
+            else
+            	SaveMessageToDB(answer.message, "out");		
+                        
+            request.Close();            
+            request = null;	            
 
 			mutAPI.ReleaseMutex();
 			Logger.Debug(tmSettings, "smfd mt release", false, mutLogger);
 			GC.WaitForPendingFinalizers();
 			GC.Collect();
+						
 		}
 				
 		
@@ -488,7 +475,7 @@ namespace Telemonitor
 			PostData pData = new PostData();
 			pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));						
 			pData.Params.Add(new PostDataParam("caption", "Скриншот " + DateTime.Now.ToString(), PostDataParamType.Field));
-			pData.Params.Add(new PostDataParam("photo", fileName, "image/png"));
+			pData.Params.Add(new PostDataParam("photo", fileName, PostDataParamType.File));
 						
 			SendMultipartFormdata(url, pData);
 			
@@ -579,7 +566,7 @@ namespace Telemonitor
 				            										
 				PostData pData = new PostData();
 				pData.Params.Add(new PostDataParam("chat_id", chat_id.ToString(), PostDataParamType.Field));
-				pData.Params.Add(new PostDataParam("document", fileName, ""));
+				pData.Params.Add(new PostDataParam("document", fileName, PostDataParamType.File));
 				
 				SendMultipartFormdata(url, pData);
 				
@@ -595,18 +582,25 @@ namespace Telemonitor
 		}
 		
 		/// <summary>
-        /// Создает HttpWebRequest с заданным Url       
+        /// Создает HttpRequest с заданным Url       
         /// <PARAM name="url">Адрес url</PARAM>				       
         /// </summary>
-        /// <returns>HttpWebRequest</returns>
-		private HttpWebRequest CreateRequest(string url)
+        /// <returns>HttpRequest</returns>
+		private HttpRequest CreateRequest()
 		{
-			HttpWebRequest request = HttpWebRequest.Create(url) as HttpWebRequest;
-			request.Method = WebRequestMethods.Http.Post;
-			request.Timeout = 5000;
+			
+			var request = new HttpRequest();
+			request.KeepAlive = true;
+			request.ConnectTimeout = 30000;
 			if (tmSettings.UseProxy) {
-				request.Proxy = new WebProxy(tmSettings.ProxyServer, tmSettings.ProxyPort);
-			}			
+				if (tmSettings.ProxyType == 0)
+					request.Proxy = HttpProxyClient.Parse(tmSettings.ProxyServer.ToString() + ':' + tmSettings.ProxyPort.ToString());
+				else
+					request.Proxy = Socks5ProxyClient.Parse(tmSettings.ProxyServer.ToString() + ':' + tmSettings.ProxyPort.ToString());
+				request.Proxy.Username = tmSettings.ProxyUser;
+				request.Proxy.Password = tmSettings.ProxyPass;
+			}
+						
 			return request;
 		}
 		
@@ -618,7 +612,7 @@ namespace Telemonitor
 			
 			// Получение скриншота
 			string tmpFileName = Path.GetTempFileName();
-			string fileName = Path.GetTempPath() + Path.GetFileNameWithoutExtension(tmpFileName) + ".png";
+			string fileName = Path.GetTempPath() + Path.GetFileNameWithoutExtension(tmpFileName) + ".jpg";
 			
 			Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height);
             using (var gr = Graphics.FromImage(bmp)) {
@@ -627,7 +621,7 @@ namespace Telemonitor
             }			
 						                                            
             // Сохранение в файл
-			bmp.Save(fileName, ImageFormat.Png);
+			bmp.Save(fileName, ImageFormat.Jpeg);
 			bmp.Dispose();	
 			
 			File.Delete(tmpFileName);

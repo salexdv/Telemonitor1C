@@ -27,6 +27,7 @@ namespace Telemonitor
 		private int proxyPort;
 		private string proxyUser;
 		private string proxyPass;
+		private int proxyType;
 		private List<DBStruct> bases;
 		private Dictionary<string, Command> commands;		
 		private Dictionary<string, bool> allowUsers;
@@ -141,6 +142,7 @@ namespace Telemonitor
 					this.proxyPort = (int)IniReadValue(iniSettings, "Proxy", "Port", typeof(int));
 					this.proxyUser = (string)IniReadValue(iniSettings, "Proxy", "Username", typeof(string));
 					this.proxyPass = (string)IniReadValue(iniSettings, "Proxy", "Password", typeof(string));
+					this.proxyType = (int)IniReadValue(iniSettings, "Proxy", "Type", typeof(int));
 					this.debug = (bool)IniReadValue(iniSettings, "Debug", "Enabled", typeof(bool));
 					
 					this.safeMode1C = (bool)GetAdditionalParamFromINI(iniSettings, "SafeMode1C", "Enabled", typeof(bool), "1");					
@@ -178,6 +180,7 @@ namespace Telemonitor
 					iniSettings.IniWriteValue("Proxy", "Port", "");
 					iniSettings.IniWriteValue("Proxy", "Username", "");
 					iniSettings.IniWriteValue("Proxy", "Password", "");
+					iniSettings.IniWriteValue("Proxy", "Type", "0");
 					iniSettings.IniWriteValue("Debug", "Enabled", "0");
 					iniSettings.IniWriteValue("SafeMode1C", "Enabled", "1");
 					iniSettings.IniWriteValue("Buttons", "ShowStartButton", "0");
@@ -600,6 +603,17 @@ namespace Telemonitor
 			get 
 			{
 				return this.proxyPass;
+			}
+		}
+		
+		/// <summary>
+        /// Тип прокси-сервера (0 - HTTP, 1 - SOCKS5)
+        /// </summary>
+		public int ProxyType
+		{
+			get 
+			{
+				return this.proxyType;
 			}
 		}
 		
