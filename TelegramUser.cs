@@ -24,7 +24,7 @@ namespace Telemonitor
 	    /// Уникальный идентификатор пользователя или бота
 	    /// </summary>
 	    [JsonProperty("id")]
-	    public int id { get; set; }
+	    public Int64 id { get; set; }
 	    
 	    /// <summary>
 	    /// Имя пользователя

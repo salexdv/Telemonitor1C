@@ -24,7 +24,7 @@ namespace Telemonitor
 	    /// Уникальный идентификатор сообщения
 	    /// </summary>
 	    [JsonProperty("message_id")]
-	    public int message_id { get; set; }
+	    public Int64 message_id { get; set; }
 	    
 	    /// <summary>
 	    /// Отправитель сообщения

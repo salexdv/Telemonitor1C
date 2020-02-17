@@ -24,7 +24,7 @@ namespace Telemonitor
 	    /// Уникальный идентификатор группового чата
 	    /// </summary>
 	    [JsonProperty("id")]
-	    public int id { get; set; }
+	    public Int64 id { get; set; }
 	    
 	    /// <summary>
 	    /// Заголовок чата

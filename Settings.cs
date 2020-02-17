@@ -10,6 +10,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using xNet;
 
 namespace Telemonitor
 {
@@ -21,15 +22,10 @@ namespace Telemonitor
 	{
 		private bool settingsExists;
 		private string botToken;
-		private int interval;
-		private bool useProxy;
-		private string proxyServer;
-		private int proxyPort;
-		private string proxyUser;
-		private string proxyPass;
-		private int proxyType;
+		private int interval;		
 		private List<DBStruct> bases;
-		private Dictionary<string, Command> commands;		
+        private List<ProxyClient> proxies;
+        private Dictionary<string, Command> commands;		
 		private Dictionary<string, bool> allowUsers;
 		private Dictionary<string, bool> screenOwners;
 		private bool debug;
@@ -136,26 +132,68 @@ namespace Telemonitor
 				try
 				{
 					this.botToken = (string)IniReadValue(iniSettings, "Main", "BotToken", typeof(string));
-					this.interval = (int)IniReadValue(iniSettings, "Main", "Interval", typeof(int));
-					this.useProxy = (bool)IniReadValue(iniSettings, "Proxy", "UseProxy", typeof(bool));
-					this.proxyServer = (string)IniReadValue(iniSettings, "Proxy", "Server", typeof(string));
-					this.proxyPort = (int)IniReadValue(iniSettings, "Proxy", "Port", typeof(int));
-					this.proxyUser = (string)IniReadValue(iniSettings, "Proxy", "Username", typeof(string));
-					this.proxyPass = (string)IniReadValue(iniSettings, "Proxy", "Password", typeof(string));
-					this.proxyType = (int)IniReadValue(iniSettings, "Proxy", "Type", typeof(int));
+					this.interval = (int)IniReadValue(iniSettings, "Main", "Interval", typeof(int));					
 					this.debug = (bool)IniReadValue(iniSettings, "Debug", "Enabled", typeof(bool));
 					
 					this.safeMode1C = (bool)GetAdditionalParamFromINI(iniSettings, "SafeMode1C", "Enabled", typeof(bool), "1");					
 					this.buttonsShowStart = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "ShowStartButton", typeof(bool), "0");
 					this.buttonsHideKeyboard = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "HideButtonsAfterMessage", typeof(bool), "1");					
 					this.buttonsNumRows = (int)GetAdditionalParamFromINI(iniSettings, "Buttons", "NumRowsOfButtons", typeof(int), "2");
-					this.buttonsUsePic = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "UsePictures", typeof(bool), "1");													
+					this.buttonsUsePic = (bool)GetAdditionalParamFromINI(iniSettings, "Buttons", "UsePictures", typeof(bool), "1");
 					this.allowUsers = GetWhiteListOfUsers((string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "Users", typeof(string), ""));
 					this.screenOwners = GetWhiteListOfUsers((string)GetAdditionalParamFromINI(iniSettings, "WhiteList", "ScreenOwners", typeof(string), ""));					
 					
 					this.oscriptPath = (string)GetAdditionalParamFromINI(iniSettings, "Environment", "OneScriptPath", typeof(string), "");
-					
-					if (!String.IsNullOrEmpty(botToken)) {
+                                      
+                    try
+                    {
+                        // Старая версия ini-файла с одним прокси
+                        string host = (string)IniReadValue(iniSettings, "Proxy", "Server", typeof(string), true);
+
+                        if ((bool)GetAdditionalParamFromINI(iniSettings, "Proxy", "UseProxy", typeof(bool), "1"))
+                        {
+                            ProxyClient proxy = null;
+
+                            if ((int)GetAdditionalParamFromINI(iniSettings, "Proxy", "Type", typeof(int), "0") == 0)
+                                proxy = new HttpProxyClient();
+                            else
+                                proxy = new Socks5ProxyClient();
+
+                            proxy.Host = host;
+                            proxy.Port = (int)GetAdditionalParamFromINI(iniSettings, "Proxy", "Port", typeof(int), "0");
+                            proxy.Username = (string)GetAdditionalParamFromINI(iniSettings, "Proxy", "Username", typeof(string), "");
+                            proxy.Password = (string)GetAdditionalParamFromINI(iniSettings, "Proxy", "Password", typeof(string), "");
+
+                            this.proxies.Add(proxy);
+                        }
+                    }
+                    catch
+                    {
+
+                        // Новая версия, где может быть несколько прокси
+                        int countProxies = (int)GetAdditionalParamFromINI(iniSettings, "Proxy", "CountProxy", typeof(int), "0");
+                        int idxProxy = 0;
+
+                        while (idxProxy < countProxies)
+                        {
+                            ProxyClient proxy = null;
+
+                            if ((int)GetAdditionalParamFromINI(iniSettings, "Proxy", "Type" + (idxProxy + 1), typeof(int), "0") == 0)
+                                proxy = new HttpProxyClient();
+                            else
+                                proxy = new Socks5ProxyClient();
+
+                            proxy.Host = (string)GetAdditionalParamFromINI(iniSettings, "Proxy", "Server" + (idxProxy + 1), typeof(string), "");
+                            proxy.Port = (int)GetAdditionalParamFromINI(iniSettings, "Proxy", "Port" + (idxProxy + 1), typeof(int), "0");
+                            proxy.Username = (string)GetAdditionalParamFromINI(iniSettings, "Proxy", "Username" + (idxProxy + 1), typeof(string), "");
+                            proxy.Password = (string)GetAdditionalParamFromINI(iniSettings, "Proxy", "Password" + (idxProxy + 1), typeof(string), "");
+
+                            this.proxies.Add(proxy);
+                            idxProxy++;
+                        }
+                    }                                            
+
+                    if (!String.IsNullOrEmpty(botToken)) {
 						if (this.interval == 0)
 							this.interval = 1;
 						iniOK = true;
@@ -510,6 +548,7 @@ namespace Telemonitor
 		{		
 			string runPath = Service.CheckPath(System.Windows.Forms.Application.StartupPath);
 			this.commands = new Dictionary<string, Command>();
+            this.proxies = new List<ProxyClient>();
 						
 			bool iniOK = CheckMainINI(runPath);
 			bool dbOK = CheckDbSettings(runPath);
@@ -554,69 +593,14 @@ namespace Telemonitor
 		/// <summary>
         /// Использовать/не использовать прокси-сервер
         /// </summary>
-		public bool UseProxy
+		public List<ProxyClient> Proxies
 		{
 			get 
 			{
-				return this.useProxy;
+				return this.proxies;
 			}
 		}
-		
-		/// <summary>
-        /// Имя прокси-сервера
-        /// </summary>
-		public string ProxyServer
-		{
-			get 
-			{
-				return this.proxyServer;
-			}
-		}
-		
-		/// <summary>
-        /// Порт прокси-сервера
-        /// </summary>
-		public int ProxyPort
-		{
-			get 
-			{
-				return this.proxyPort;
-			}
-		}
-		
-		/// <summary>
-        /// Имя пользователя прокси-сервера
-        /// </summary>
-		public string ProxyUser
-		{
-			get 
-			{
-				return this.proxyUser;
-			}
-		}
-		
-		/// <summary>
-        /// Пароль пользователя прокси-сервера
-        /// </summary>
-		public string ProxyPass
-		{
-			get 
-			{
-				return this.proxyPass;
-			}
-		}
-		
-		/// <summary>
-        /// Тип прокси-сервера (0 - HTTP, 1 - SOCKS5)
-        /// </summary>
-		public int ProxyType
-		{
-			get 
-			{
-				return this.proxyType;
-			}
-		}
-		
+				
 		/// <summary>
         /// Признак отладки
         /// </summary>

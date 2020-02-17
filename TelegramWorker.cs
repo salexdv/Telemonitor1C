@@ -80,7 +80,7 @@ namespace Telemonitor
 		/// <summary>
         /// Очередь необработанных сообщений                       
         /// </summary>
-		private Dictionary<int, TelegramCommand> messageOrder;		
+		private Dictionary<Int64, TelegramCommand> messageOrder;		
 		
 		/// <summary>
 		/// Соединение с базой sqlite
@@ -173,7 +173,7 @@ namespace Telemonitor
 		/// <param name="user_id">Идентификатор пользователя</param>
 		/// <param name="chat_id">Идентификатор чата</param>
 		/// <returns></returns>
-		private MessageTDB GetMessageFromDB(int message_id, int user_id, int chat_id)
+		private MessageTDB GetMessageFromDB(Int64 message_id, Int64 user_id, Int64 chat_id)
 		{
 			if (sqlConnection != null) {
 				SQLiteCommand cmd = sqlConnection.CreateCommand();
@@ -216,7 +216,7 @@ namespace Telemonitor
 			commandParams.Add(message.text);
 			
 			MessageTDB msg = null;
-			int parent_id = message.reply_to_message.message_id;
+			Int64 parent_id = message.reply_to_message.message_id;
 			
 			while (parent_id > 0) {
 				msg = GetMessageFromDB(parent_id, message.from.id, message.chat.id);
@@ -261,7 +261,7 @@ namespace Telemonitor
 			this.botToken = settings.BotToken;			
 			this.mutLogger = new Mutex();
 			this.mutAPI = new Mutex();
-			this.messageOrder = new Dictionary<int, TelegramCommand>();						
+			this.messageOrder = new Dictionary<Int64, TelegramCommand>();						
 			this.sqlConnection = GetSQLConnection();
 		}
 		
@@ -272,6 +272,7 @@ namespace Telemonitor
     		}
     		else if (e.Error != null) {        		
         		Logger.Debug(tmSettings, "worker error: " + e.Error.Message, true, mutLogger);
+        		Logger.Debug(tmSettings, "worker error: " + e.Error.ToString(), true, mutLogger);
     		}
 			else if (e.Result == null) {
 				Logger.Debug(tmSettings, "worker stopped", true, mutLogger);
@@ -367,7 +368,9 @@ namespace Telemonitor
 	
 				Logger.Debug(tmSettings, "mt wait", false, mutLogger);
 				mutAPI.WaitOne();
-												
+								
+				ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+				
 				HttpRequest request = CreateRequest();
 				
 				Logger.Debug(tmSettings, "request created", false, mutLogger);
@@ -375,7 +378,8 @@ namespace Telemonitor
 				TelegramAnswer answer = null;
 				
 				try {                    
-                    
+                    					
+					//HttpResponse response = request.Send(HttpMethod .GET, new Uri(String.Format(url, botToken)));
 					HttpResponse response = request.Get(String.Format(url, botToken));
                     string jsonText = response.ToString();
                     
@@ -392,7 +396,10 @@ namespace Telemonitor
                                                            
 				}
 				catch (Exception respExc) {
-					Logger.Debug(tmSettings, "response err: " + respExc.Message, true, mutLogger);
+					string err = respExc.Message;
+					if (respExc.InnerException != null)
+						err += " --> " + respExc.InnerException.Message;
+					Logger.Debug(tmSettings, "response err: " + err, true, mutLogger);
 				}
 				
 				request.Close();
@@ -434,6 +441,7 @@ namespace Telemonitor
 			
 			Logger.Debug(tmSettings, "smfd post request", false, mutLogger);
 			
+			//HttpResponse response = request.Send(HttpMethod.POST, new Uri(String.Format(url, botToken)));
 			HttpResponse response = request.Post(String.Format(url, botToken));
 			string jsonText = response.ToString();
 			
@@ -465,7 +473,7 @@ namespace Telemonitor
         /// <PARAM name="chat_id">Идентификатор чата</PARAM>
 		/// <PARAM name="fileName">Имя отправляемого файла</PARAM>        
         /// </summary>
-		private void SendPhoto(int chat_id, string fileName, int reply_to_message_id = 0)
+		private void SendPhoto(Int64 chat_id, string fileName, Int64 reply_to_message_id = 0)
 		{						
 			string url = "https://api.telegram.org/bot{0}/sendPhoto";
 			
@@ -513,7 +521,7 @@ namespace Telemonitor
         /// <PARAM name="chat_id">Идентификатор чата</PARAM>
 		/// <PARAM name="message">Текст сообщения</PARAM>        
         /// </summary>
-		private void SendMessage(int chat_id, string message, string keyboard = "", int reply_to_message_id = 0)
+		private void SendMessage(Int64 chat_id, string message, string keyboard = "", Int64 reply_to_message_id = 0)
 		{			
 			string url = "https://api.telegram.org/bot{0}/sendMessage";			
 			
@@ -555,7 +563,7 @@ namespace Telemonitor
         /// <PARAM name="chat_id">Идентификатор чата</PARAM>
 		/// <PARAM name="fName">Имя файла</PARAM>        
         /// </summary>
-		private void SendDocument(int chat_id, string fileName, int reply_to_message_id = 0)
+		private void SendDocument(Int64 chat_id, string fileName, Int64 reply_to_message_id = 0)
 		{						
 			if (File.Exists(fileName)) {
 			
@@ -592,13 +600,23 @@ namespace Telemonitor
 			var request = new HttpRequest();
 			request.KeepAlive = true;
 			request.ConnectTimeout = 30000;
-			if (tmSettings.UseProxy) {
-				if (tmSettings.ProxyType == 0)
-					request.Proxy = HttpProxyClient.Parse(tmSettings.ProxyServer.ToString() + ':' + tmSettings.ProxyPort.ToString());
-				else
-					request.Proxy = Socks5ProxyClient.Parse(tmSettings.ProxyServer.ToString() + ':' + tmSettings.ProxyPort.ToString());
-				request.Proxy.Username = tmSettings.ProxyUser;
-				request.Proxy.Password = tmSettings.ProxyPass;
+			
+			if (0 < tmSettings.Proxies.Count) {
+
+                if (1 == tmSettings.Proxies.Count)
+                {
+                    request.Proxy = tmSettings.Proxies[0];
+                }
+                else
+                {
+                    ChainProxyClient chain = new ChainProxyClient();
+                    foreach (ProxyClient proxy in tmSettings.Proxies)
+                    {
+                        chain.AddProxy(proxy);
+                    }
+                    request.Proxy = chain;
+                }
+                    
 			}
 						
 			return request;
@@ -651,7 +669,7 @@ namespace Telemonitor
 				
 				if (connector.Success) {
 					
-					int reply_to_message_id = (result.Dialog) ? tCommand.Message.message_id : 0;
+					Int64 reply_to_message_id = (result.Dialog) ? tCommand.Message.message_id : 0;
 					
 					if (!String.IsNullOrEmpty(result.Text))
 						SendMessage(tCommand.Message.chat.id, result.Text, "", reply_to_message_id);
@@ -733,7 +751,7 @@ namespace Telemonitor
 							output.AppendLine(curString);
 	 				}
 					
-					int reply_to_message_id = (dialog) ? tCommand.Message.message_id : 0;
+					Int64 reply_to_message_id = (dialog) ? tCommand.Message.message_id : 0;
 	
 					if (0 < output.Length || !String.IsNullOrEmpty(resFile)) {
 						if (0 < output.Length)
